@@ -32,11 +32,11 @@ std::vector<string> TransitionSequence::AsStrings(Store *store) const {
 }
 
 string TransitionSequence::DebugString(Store *store) const {
-	std::vector<string> v = AsStrings(store);
-	string output;
-	for (const string &s : v) StrAppend(&output, " ", s);
+  std::vector<string> v = AsStrings(store);
+  string output;
+  for (const string &s : v) StrAppend(&output, " ", s);
 
-	return output;
+  return output;
 }
 
 int TransitionSequence::FirstAction(int token) const {
@@ -93,7 +93,7 @@ void TransitionGenerator::AttentionIndex::Update(const Action &action) {
       break;
     }
     case ParserAction::CONNECT:
-			break;
+      break;
     case ParserAction::FOCUS: {
       MakeCenter(action.frame->handle);
       break;
@@ -223,7 +223,7 @@ void TransitionGenerator::AttentionIndex::Translate(
     }
     case ParserAction::FOCUS: {
       output.source = Index(action.frame->handle);
-			if (true || output.source > 0) sequence->Add(output);
+			if (output.source > 0) sequence->Add(output);
 			break;
 		}
     case ParserAction::SHIFT:
