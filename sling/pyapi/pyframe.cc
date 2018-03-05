@@ -29,11 +29,13 @@ PyMethodDef PyFrame::methods[] = {
   {"append", (PyCFunction) &PyFrame::Append, METH_VARARGS, ""},
   {"extend", (PyCFunction) &PyFrame::Extend, METH_O, ""},
   {"store", (PyCFunction) &PyFrame::GetStore, METH_NOARGS, ""},
+  {"islocal", (PyCFunction) &PyFrame::IsLocal, METH_NOARGS, ""},
+  {"isglobal", (PyCFunction) &PyFrame::IsGlobal, METH_NOARGS, ""},
   {nullptr}
 };
 
 void PyFrame::Define(PyObject *module) {
-  InitType(&type, "sling.Frame", sizeof(PyFrame));
+  InitType(&type, "sling.Frame", sizeof(PyFrame), false);
   type.tp_dealloc = reinterpret_cast<destructor>(&PyFrame::Dealloc);
   type.tp_getattro = &PyFrame::GetAttr;
   type.tp_setattro = &PyFrame::SetAttr;
@@ -52,16 +54,20 @@ void PyFrame::Define(PyObject *module) {
   type.tp_as_sequence = &sequence;
   sequence.sq_contains = &PyFrame::Contains;
 
-  RegisterType(&type);
+  RegisterType(&type, module, "Frame");
 }
 
 void PyFrame::Init(PyStore *pystore, Handle handle) {
-  // Add frame as root object for store to keep it alive in the store.
-  InitRoot(pystore->store, handle);
-
   // Add reference to store to keep it alive.
-  this->pystore = pystore;
-  Py_INCREF(pystore);
+  if (handle.IsGlobalRef() && pystore->pyglobals != nullptr) {
+    this->pystore = pystore->pyglobals;
+  } else {
+    this->pystore = pystore;
+  }
+  Py_INCREF(this->pystore);
+
+  // Add frame as root object for store to keep it alive in the store.
+  InitRoot(this->pystore->store, handle);
 }
 
 void PyFrame::Dealloc() {
@@ -70,6 +76,9 @@ void PyFrame::Dealloc() {
 
   // Release reference to store.
   Py_DECREF(pystore);
+
+  // Free object.
+  Free();
 }
 
 Py_ssize_t PyFrame::Size() {
@@ -92,16 +101,11 @@ PyObject *PyFrame::Compare(PyObject *other, int op) {
   if (PyObject_TypeCheck(other, &PyFrame::type)) {
     // Check if the stores and handles are the same.
     PyFrame *pyother = reinterpret_cast<PyFrame *>(other);
-    match = pyother->pystore->store == pystore->store &&
-            pyother->handle() == handle();
+    match = CompatibleStore(pyother) && pyother->handle() == handle();
   }
 
   if (op == Py_NE) match = !match;
-  if (match) {
-    Py_RETURN_TRUE;
-  } else {
-    Py_RETURN_FALSE;
-  }
+  return PyBool_FromLong(match);
 }
 
 PyObject *PyFrame::GetStore() {
@@ -131,10 +135,6 @@ int PyFrame::Assign(PyObject *key, PyObject *v) {
   Handle role = pystore->RoleValue(key);
   if (role.IsError()) return -1;
 
-  // Get new frame role value.
-  Handle value = pystore->Value(v);
-  if (value.IsError()) return -1;
-
   // Check role.
   if (role.IsNil()) {
     PyErr_SetString(PyExc_IndexError, "Role not defined");
@@ -145,8 +145,17 @@ int PyFrame::Assign(PyObject *key, PyObject *v) {
     return -1;
   };
 
-  // Set frame slot value.
-  pystore->store->Set(handle(), role, value);
+  if (v == nullptr) {
+    // Delete all slots with name.
+    pystore->store->Delete(handle(), role);
+  } else {
+    // Get new frame role value.
+    Handle value = pystore->Value(v);
+    if (value.IsError()) return -1;
+
+    // Set frame slot value.
+    pystore->store->Set(handle(), role, value);
+  }
 
   return 0;
 }
@@ -200,12 +209,17 @@ int PyFrame::SetAttr(PyObject *key, PyObject *v) {
     return -1;
   };
 
-  // Get role value.
-  Handle value = pystore->Value(v);
-  if (value.IsError())  return -1;
+  if (v == nullptr) {
+    // Delete all slots with name.
+    pystore->store->Delete(handle(), role);
+  } else {
+    // Get role value.
+    Handle value = pystore->Value(v);
+    if (value.IsError())  return -1;
 
-  // Set role value for frame.
-  pystore->store->Set(handle(), role, value);
+    // Set role value for frame.
+    pystore->store->Set(handle(), role, value);
+  }
 
   return 0;
 }
@@ -308,6 +322,14 @@ PyObject *PyFrame::Data(PyObject *args, PyObject *kw) {
   }
 }
 
+PyObject *PyFrame::IsLocal() {
+  return PyBool_FromLong(handle().IsLocalRef());
+}
+
+PyObject *PyFrame::IsGlobal() {
+  return PyBool_FromLong(handle().IsGlobalRef());
+}
+
 bool PyFrame::Writable() {
   if (pystore->store->frozen() || !pystore->store->Owned(handle())) {
     PyErr_SetString(PyExc_ValueError, "Frame is not writable");
@@ -316,12 +338,28 @@ bool PyFrame::Writable() {
   return true;
 }
 
+bool PyFrame::CompatibleStore(PyFrame *other) {
+  // Frames are compatible if they are in the same store.
+  if (pystore->store == other->pystore->store) return true;
+
+  if (handle().IsLocalRef()) {
+    // A local store is also compatible with its global store.
+    return pystore->pyglobals->store == other->pystore->store;
+  } else if (other->handle().IsLocalRef()) {
+    // A global store is also compatible with a local store based on it.
+    return pystore->store == other->pystore->pyglobals->store;
+  } else {
+    // Frames belong to different global stores.
+    return false;
+  }
+}
+
 void PySlots::Define(PyObject *module) {
-  InitType(&type, "sling.Slots", sizeof(PySlots));
+  InitType(&type, "sling.Slots", sizeof(PySlots), false);
   type.tp_dealloc = reinterpret_cast<destructor>(&PySlots::Dealloc);
   type.tp_iter = &PySlots::Self;
   type.tp_iternext = &PySlots::Next;
-  RegisterType(&type);
+  RegisterType(&type, module, "Slots");
 }
 
 void PySlots::Init(PyFrame *pyframe, Handle role) {
@@ -333,6 +371,7 @@ void PySlots::Init(PyFrame *pyframe, Handle role) {
 
 void PySlots::Dealloc() {
   Py_DECREF(pyframe);
+  Free();
 }
 
 PyObject *PySlots::Next() {
@@ -345,7 +384,10 @@ PyObject *PySlots::Next() {
       // Create two-tuple for name and value.
       PyObject *name = pyframe->pystore->PyValue(slot->name);
       PyObject *value = pyframe->pystore->PyValue(slot->value);
-      return PyTuple_Pack(2, name, value);
+      PyObject *pair = PyTuple_Pack(2, name, value);
+      Py_DECREF(name);
+      Py_DECREF(value);
+      return pair;
     } else if (role == slot->name) {
       return pyframe->pystore->PyValue(slot->value);
     }

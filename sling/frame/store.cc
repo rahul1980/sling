@@ -154,6 +154,9 @@ Store::Store(const Store *globals) : globals_(globals) {
   // Global store must be frozen.
   CHECK(globals->frozen_);
 
+  // Add reference to shared global store.
+  if (globals->shared()) globals->AddRef();
+
   // Get configuration options for local store.
   options_ = globals->options_->local;
 
@@ -178,6 +181,9 @@ Store::Store(const Store *globals) : globals_(globals) {
 }
 
 Store::~Store() {
+  // Make sure there are no references to store.
+  CHECK(refs_ <= 0) << "Delete with live references to store";
+
   // Unlink roots and externals to prevent access to the store after it has been
   // destructed.
   roots_.Unlink();
@@ -189,6 +195,28 @@ Store::~Store() {
     Heap *next = heap->next();
     delete heap;
     heap = next;
+  }
+
+  // Release reference to shared global store.
+  if (globals_ != nullptr && globals_->shared()) globals_->Release();
+}
+
+void Store::Share() {
+  CHECK(!shared()) << "Store is already shared";
+  refs_ = 1;
+}
+
+void Store::AddRef() const {
+  int r = refs_.fetch_add(1);
+  CHECK(r != -1) << "Store is not shared";
+}
+
+void Store::Release() const {
+  int r = refs_.fetch_sub(1);
+  if (r == 1) {
+    delete this;
+  } else {
+    CHECK(r != -1) << "Store is not shared";
   }
 }
 
@@ -495,6 +523,39 @@ Handle Store::Extend(Handle frame, Handle name, Handle value) {
   return AllocateHandle(clone);
 }
 
+void Store::Delete(Handle frame, Handle name) {
+  // Get frame.
+  FrameDatum *datum = GetFrame(frame);
+  CHECK(datum->IsFrame());
+
+  // Id slots cannot be deleted.
+  CHECK(name != Handle::id());
+
+  // Delete all slots with name.
+  Slot *slot = datum->begin();
+  Slot *end = datum->end();
+  while (slot < end && slot->name != name) slot++;
+  if (slot == end) return;
+  Slot *current = slot;
+  while (slot < end) {
+    if (slot->name == name) {
+      slot++;
+    } else {
+      *current++ = *slot++;
+    }
+  }
+
+  // Update frame size.
+  Address limit = datum->limit();
+  datum->resize((current - datum->begin()) * sizeof(Slot));
+
+  // Create invalid object for the remainder.
+  Datum *remainder = reinterpret_cast<Datum *>(current);
+  remainder->invalidate();
+  remainder->resize(limit - remainder->payload());
+  remainder->self = Handle::nil();
+}
+
 Handle Store::Hash(Text str) {
   return Handle::Integer(HashBytes(str.data(), str.size()));
 }
@@ -551,8 +612,9 @@ void Store::InsertSymbol(SymbolDatum *symbol) {
   GetMap(symbols_)->insert(symbol);
   num_symbols_++;
 
-  // Resize symbol table if fill factor is more than 1:1.
-  if (num_symbols_ > num_buckets_) {
+  // Resize symbol table if fill factor is more than 1:1, unless this would
+  // make the symbol table exceed the maximum object size.
+  if (num_symbols_ > num_buckets_ && num_buckets_ < kMapSizeLimit / 2) {
     // Double the number of buckets.
     num_buckets_ *= 2;
 
@@ -795,8 +857,11 @@ Datum *Store::AllocateDatumSlow(Type type, Word size) {
   // Object allocation not allowed in frozen store.
   CHECK(!frozen_);
 
-  // This is called when the current heap is full.
+  // Check for size overflow.
   Word bytes = Align(sizeof(Datum) + size);
+  CHECK_LT(bytes, kObjectSizeLimit) << "Object too big";
+
+  // This is called when the current heap is full.
   Datum *object;
   while (current_heap_->next() != nullptr) {
     // Switch to next heap.
@@ -876,6 +941,21 @@ Handle Store::AllocateHandleSlow(Datum *object) {
   object->self = handle;
 
   return handle;
+}
+
+Handle Store::Resolve(Handle handle) {
+  for (;;) {
+    if (!handle.IsRef() || handle.IsNil()) return handle;
+    Datum *datum = Deref(handle);
+    if (!datum->IsFrame()) return handle;
+
+    FrameDatum *frame = datum->AsFrame();
+    if (frame->IsNamed()) return handle;
+
+    Handle qua = frame->get(Handle::is());
+    if (qua == Handle::nil()) return handle;
+    handle = qua;
+  }
 }
 
 void Store::Mark() {

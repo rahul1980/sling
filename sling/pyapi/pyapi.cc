@@ -14,9 +14,12 @@
 
 #include <python2.7/Python.h>
 
-#include "sling/pyapi/pyframe.h"
-#include "sling/pyapi/pystore.h"
+#include "sling/base/init.h"
 #include "sling/pyapi/pyarray.h"
+#include "sling/pyapi/pyframe.h"
+#include "sling/pyapi/pyparser.h"
+#include "sling/pyapi/pyrecordio.h"
+#include "sling/pyapi/pystore.h"
 
 namespace sling {
 
@@ -37,11 +40,16 @@ static void RegisterPythonModule() {
   PySlots::Define(module);
   PyArray::Define(module);
   PyItems::Define(module);
+  PyTokenizer::Define(module);
+  PyParser::Define(module);
+  PyRecordReader::Define(module);
+  PyRecordWriter::Define(module);
 }
 
 }  // namespace sling
 
 extern "C" void initpysling() {
+  sling::InitSharedLibrary();
   sling::RegisterPythonModule();
 }
 

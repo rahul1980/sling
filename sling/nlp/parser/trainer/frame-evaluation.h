@@ -17,15 +17,14 @@
 #ifndef SLING_NLP_PARSER_TRAINER_FRAME_EVALUATION_H_
 #define SLING_NLP_PARSER_TRAINER_FRAME_EVALUATION_H_
 
-#include <hash_map>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "sling/nlp/document/document.h"
 #include "sling/frame/object.h"
 #include "sling/frame/store.h"
-#include "sling/util/hash.h"
 
 namespace sling {
 namespace nlp {
@@ -59,7 +58,7 @@ class FrameEvaluation {
   };
 
   // Mapping from span to mention frame.
-  typedef hash_map<Span, Handle, SpanHash> MentionMap;
+  typedef std::unordered_map<Span, Handle, SpanHash> MentionMap;
 
   // Frame alignment.
   class Alignment : public HandleMap<Handle> {

@@ -23,7 +23,33 @@ A more detailed description of the SLING parser can be found in this paper:
 * Michael Ringgaard, Rahul Gupta, and Fernando C. N. Pereira. 2017.
   *SLING: A framework for frame semantic parsing*. http://arxiv.org/abs/1710.07032.
 
-</span>
+This is SEMPAR, the first generation of the SLING parser. We have started to work on CASPAR, the second generation of the parser, which can be found [here](https://github.com/google/sling/tree/caspar).
+
+## Trying out the parser
+
+If you just want to try out the parser on a pre-trained model, you can install
+the wheel with pip and download a pre-trained parser model. On a Linux machine
+with Python 2.7 you can install a pre-built wheel:
+
+```
+sudo pip install http://www.jbox.dk/sling/sling-1.0.0-cp27-none-linux_x86_64.whl
+```
+and download the pre-trained model:
+```
+wget http://www.jbox.dk/sling/sempar.flow
+```
+You can then use the parser in Python:
+```
+import sling
+
+parser = sling.Parser("sempar.flow")
+
+text = raw_input("text: ")
+doc = parser.parse(text)
+print doc.frame.data(pretty=True)
+for m in doc.mentions:
+  print "mention", doc.phrase(m.begin, m.end)
+```
 
 ## Installation
 
@@ -48,7 +74,7 @@ sudo pip install https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-
 ## Building
 
 Operating system: Linux<br>
-Languages: C++, Python 2.7, assembler<br>
+Languages: C++ 11 (GCC 4), Python 2.7, assembler<br>
 CPU: Intel x64 or compatible<br>
 Build system: Bazel<br>
 
@@ -64,7 +90,6 @@ includes, try the following:
    link](sling/blob/master/third_party/tensorflow/include) to point to your Tensorflow include folder.
 *  Change [this
    dependency](https://github.com/google/sling/blob/04d6f28269bdc7d29c71d8dc24d74fe39641f589/third_party/tensorflow/BUILD#L21) to point to your Tensorflow's pywrap library.
-
 
 ## Training
 
@@ -144,6 +169,7 @@ can be seen below. It is best to create one SLING document per input sentence.
   }
 }
 ```
+For writing your converter or getting a better hold of the concepts of frames and store in SLING, you can have a look at detailed deep dive on frames and stores [here](sling/frame/README.md).
 
 The SLING [Document class](sling/nlp/document/document.h)
 also has methods to incrementally make such document frames, e.g.
