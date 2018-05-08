@@ -66,6 +66,108 @@ def dev_accuracy(commons_path, commons, dev_path, schema, tmp_folder, sempar):
                                 commons_path=commons_path)
 
 
+# Implements loss-normalization policies for cascades.
+#
+# Recall that for a batch item I (i.e. a sentence), and a single gold action G
+# in its gold sequence, there is a list L of (component, sub_action) pairs.
+# Each such (c, s) pair incurs a loss from c's softmax layer during training.
+# Typically the loss is a cross-entropy loss, which means that the loss ranges
+# in [0, softmax_size(c)].
+#
+# A naive way to compute the loss for the entire batch is to calculate:
+#   \sum_I \sum_{G \in I} \sum_{(c, s) \in G} Loss(c, s)
+#
+# But this is dominated by long batch items I, long gold translations (L),
+# and bigger components (since the losses for them can be much larger).
+#
+# One way to be fair to all batch items and components is to a) first compute
+# a BatchSize x NumComponents matrix M of losses, where (i, j) entry is the
+# total loss incurred by batch item i in component j.
+#
+# M(i, j) = \sum_{G \in i} \sum_{(c, s) \in G: c = j} Loss(c, s)
+#
+# and have a corresponding counts matrix N:
+# N(i, j) = \sum_{G \in i} \sum_{(c, s) \in G: c = j} 1
+#
+# Then compute the final normalized loss as:
+#
+# NormalizedLoss = \sum_{i, j} M(i, j) / (N(i, j) * SoftmaxSize(j))
+# It can be further divided by BatchSize to get batch-size-independent losses.
+#
+# Another alternative is to compute:
+#
+# NormalizedLoss2 = \sum_j \sum_i M(i, j) / \sum_i (N(i, j) * SoftmaxSize(j))
+# This need not be further divided by BatchSize.
+#
+# Note that if we only have one component (i.e. non-cascaded version), then
+# NormalizedLoss = \sum_i M_i / N_i * (SoftmaxSize(0)), and
+# NormalizedLoss2 = (\sum_i M_i) / \sum_i (N_i * SoftmaxSize(0)),
+#
+# i.e. NormalizedLoss2 is just a constant times our ordinary non-cascade loss.
+class CascadeLoss:
+  NORMALIZE_PER_COMPONENT_PER_ITEM = 0
+  NORMALIZE_PER_COMPONENT_ACROSS_ITEMS = 1
+
+  def __init__(self, normalizer, component_sizes, \
+               divide_by_component_size, divide_by_batch_size):
+    self.normalizer = normalizer
+    self.divide_by_size = divide_by_component_size
+    self.divide_by_batch_size = divide_by_batch_size
+
+    if divide_by_batch_size and \
+      normalizer == self.NORMALIZE_PER_COMPONENT_ACROSS_ITEMS:
+      print "Note: divide_by_batch_size=True has no effect with "\
+        "NORMALIZE_PER_COMPONENT_ACROSS_ITEMS policy"
+
+    self.num_components = len(component_sizes)
+    self.sizes = component_sizes
+    self.loss = []
+    self.counts = []
+
+  # Resets loss computation for a new batch.
+  def reset(self, batch_size):
+    self.loss = [None] * batch_size
+    self.counts = [None] * batch_size
+    for i in xrange(batch_size):
+      self.loss[i] = {}
+      self.counts[i] = {}
+      for j in xrange(self.num_components):
+        self.loss[i][j] = Var(torch.Tensor([0.0]))
+        self.counts[i][j] = 0
+
+
+  # Adds a single component's loss on one sub-action to the overall loss.
+  def add(self, item_index, component_index, loss):
+    self.loss[item_index][component_index] += loss
+    self.counts[item_index][component_index] += 1
+
+
+  # Computes the final aggregated batch loss using specified normalization.
+  def compute(self):
+    loss = Var(torch.Tensor([0.0]))
+    if self.normalizer == CascadeLoss.NORMALIZE_PER_COMPONENT_PER_ITEM:
+      for i in xrange(len(self.loss)):
+        for j in self.loss[i]:
+          term = self.loss[i][j] / self.counts[i][j]
+          if self.divide_by_size:
+            term /= self.sizes[j]
+          loss += term
+      if self.divide_by_batch_size: loss /= len(self.loss)
+    elif self.normalizer == CascadeLoss.NORMALIZE_PER_COMPONENT_ACROSS_ITEMS:
+      for j in xrange(self.num_components):
+        component_loss = Var(torch.Tensor([0.0]))
+        component_count = 0
+        for i in xrange(len(self.loss)):
+          if j in self.loss[i]:
+            component_loss += self.loss[i][j]
+            component_count += self.counts[i][j]
+        component_loss /= component_count
+        if self.divide_by_size:
+          component_loss /= self.sizes[j]
+        loss += component_loss
+    return loss
+
+
 # A trainer reads one example at a time, till a count of num_examples is
 # reached. For each example it computes the loss.
 # After every 'batch_size' examples, it computes the gradient and applies
@@ -130,9 +232,12 @@ class Trainer:
     self.count = 0
     self.last_eval_count = 0
 
-    self.current_batch_num_transitions = 0
     self.current_batch_size = 0
-    self.batch_loss = Var(torch.FloatTensor([0.0]))
+    self.batch_loss = CascadeLoss(
+      CascadeLoss.NORMALIZE_PER_COMPONENT_ACROSS_ITEMS, \
+      sempar.component_sizes(),
+      divide_by_component_size=False,
+      divide_by_batch_size=True)
     self._reset()
 
     self.checkpoint_metrics = []
@@ -150,21 +255,16 @@ class Trainer:
   # Resets the state for a new batch.
   def _reset(self):
     self.current_batch_size = 0
-    self.current_batch_num_transitions = 0
-    
-    # Note: self.batch_loss is the apex of the computation graph.
-    # Just resetting it often doesn't guarantee (immediate) garbage collection.
-    # Explicitly deleting it here seems to work better empirically.
-    del self.batch_loss
-    self.batch_loss = Var(torch.FloatTensor([0.0]))
+    self.batch_loss.reset(self.hyperparams.batch_size)
     self.optimizer.zero_grad()
 
 
   # Processes a single given example.
   def process(self, example):
-    loss, num_transitions = self.model.forward(example, train=True)
-    self.current_batch_num_transitions += num_transitions
-    self.batch_loss += loss
+    losses = self.model.forward(example, train=True)
+    for loss, component_index in losses:
+      self.batch_loss.add(self.current_batch_size, component_index, loss)
+
     self.current_batch_size += 1
     self.count += 1
     if self.current_batch_size == self.hyperparams.batch_size:
@@ -184,20 +284,20 @@ class Trainer:
   def update(self):
     if self.current_batch_size > 0:
       start = time.time()
-      self.batch_loss /= self.current_batch_num_transitions
+      torch_loss = self.batch_loss.compute()
 
       # Add the regularization penalty to the batch loss.
       l2 = Var(torch.Tensor([0.0]))
       if self.hyperparams.l2_coeff > 0.0:
         for p in self.model.regularized_params:
           l2 += 0.5 * self.hyperparams.l2_coeff * torch.sum(p * p)
-        self.batch_loss += l2
+        torch_loss += l2
 
-      self.batch_loss /= 3.0  # for parity with TF
-      value = self.batch_loss.data[0]
+      torch_loss /= 3.0  # for parity with TF
+      value = torch_loss.data[0]
 
       # Compute gradients.
-      self.batch_loss.backward()
+      torch_loss.backward()
 
       # Clip them.
       self.clip_gradients()

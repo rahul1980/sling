@@ -17,11 +17,16 @@
 
 class FF:
   def __init__(
-      self, tf, input, layers, hidden=None, bias=True, activation="Relu"):
+      self, tf, input, layers, outputs, hidden=None, \
+      bias=True, activation="Relu"):
+    if hidden is not None:
+      assert hidden < len(layers) and hidden >= 0, hidden
+
     self.weights = []
     self.biases = []
     self.hidden_out = None
     self.output = None
+    self.num_hidden = len(layers)
 
     v = input
     for l in range(len(layers)):
@@ -42,10 +47,9 @@ class FF:
         v.type = type
         v.shape = [1, width]
 
-      if l != len(layers) - 1:
-        v = tf.op(activation, [v])
-        v.type = type
-        v.shape = [1, width]
+      v = tf.op(activation, [v])
+      v.type = type
+      v.shape = [1, width]
 
       if l == hidden:
         self.hidden_out = v
@@ -56,13 +60,38 @@ class FF:
         v.producer.add_attr("input", 1)
         v.producer.add_attr("output", 1)
 
-    self.output = tf.identity(v, name='output')
-    self.output.type = v.type
-    self.output.shape = v.shape
+    height = v.shape[1]
+    self.outputs = []
+    for index, output_size in enumerate(outputs):
+      W = tf.var("W_out" + str(index), type, [height, output_size])
+      self.weights.append(W)
+      v = tf.matmul(v, W)
+      v.type = type
+      v.shape = [1, output_size]
+
+      if bias:
+        b = tf.var("b_out" + str(index), type, [1, output_size])
+        self.biases.append(b)
+        v = tf.add(v, b)
+        v.type = type
+        v.shape = [1, output_size]
+
+      output = tf.identity(v, name='output' + str(index))
+      output.type = v.type
+      output.shape = v.shape
+      self.outputs.append(output)
 
 
   def set_layer_data(self, index, weight, bias=None):
-    assert len(self.weights) > index, index
+    assert len(self.weights) - len(self.outputs) > index, index
+    self.weights[index].data = weight
+    if bias is not None:
+      self.biases[index].data = bias
+
+
+  def set_output_layer_data(self, index, weight, bias=None):
+    index += self.num_hidden
+    assert len(self.weights) > index, (index, len(self.weights))
     self.weights[index].data = weight
     if bias is not None:
       self.biases[index].data = bias

@@ -17,6 +17,8 @@ import struct
 import unicodedata
 
 from action_table import Actions
+from cascade import Flat
+from cascade import ShiftOrNotCascade
 from corpora import Corpora
 from lexicon import Lexicon
 from parser_state import ParserState
@@ -124,6 +126,7 @@ class Spec:
     self.lstm_features = []
     self.ff_fixed_features = []
     self.ff_link_features = []
+    self.cascade = None
 
 
   # Builds an action table from 'corpora'.
@@ -285,6 +288,10 @@ class Spec:
 
     # Add feature specs.
     self._specify_features()
+
+    # Specify cascade.
+    self.cascade = ShiftOrNotCascade(self.actions)
+    self.cascade.build()
 
 
   # Loads embeddings for words in the lexicon.

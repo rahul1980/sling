@@ -54,6 +54,31 @@ class Action:
     return self._totuple() == other._totuple()
 
 
+  # Copies non-None fields to 'other'.
+  def copy_to(self, other):
+    if self.type is not None: other.type = self.type
+    if self.length is not None: other.length = self.length
+    if self.label is not None: other.label = self.label
+    if self.source is not None: other.source = self.source
+    if self.target is not None: other.target = self.target
+    if self.role is not None: other.role = self.role
+
+
+  # Returns whether the action has type 't'.
+  def typed(self, t):
+    return self.type == t
+
+
+  # Returns whether the action is a SHIFT.
+  def is_shift(self):
+    return self.type == Action.SHIFT
+
+
+  # Returns whether the action is a STOP.
+  def is_stop(self):
+    return self.type == Action.STOP
+
+
   # Returns the string representation of the action.
   def __repr__(self):
     names = {

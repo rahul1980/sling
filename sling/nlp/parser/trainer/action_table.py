@@ -61,6 +61,14 @@ class Actions:
     return len(self.table)
 
 
+  def action(self, index):
+    return self.table[index]
+
+
+  def index(self, action):
+    return self.indices.get(action, None)
+
+
   # Adds 'action' to the table.
   def add(self, action):
     index = self.indices.get(action, len(self.table))

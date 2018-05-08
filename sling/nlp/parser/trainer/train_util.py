@@ -186,4 +186,3 @@ class Resources:
     if word_embeddings_path != "":
       self.spec.load_word_embeddings(word_embeddings_path)
       print "After loading pre-trained word embeddings", mem()
-

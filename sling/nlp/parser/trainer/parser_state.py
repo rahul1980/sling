@@ -84,6 +84,13 @@ class ParserState:
     return s
 
 
+  # Returns the text of the current word.
+  def current_word(self):
+    if state.current < state.end:
+      return self.document.tokens[state.current].text
+    return "<END>"
+
+
   # Computes the role graph.
   def compute_role_graph(self):
     # No computation required if none of the actions have roles.
@@ -116,9 +123,19 @@ class ParserState:
     return self.attention[index].focus
 
 
+  # Returns whether the state can SHIFT to the next token.
+  def can_shift(self):
+    return not self.done and self.current < self.end
+
+
+  # Returns whether the state can STOP.
+  def can_stop(self):
+    return not self.done and self.current == self.end
+
+
   # Returns whether 'action_index' is allowed in the current state.
   def is_allowed(self, action_index):
-    if self.done: return Falseo
+    if self.done: return False
 
     actions = self.spec.actions
     if self.current == self.end: return action_index == actions.stop()
