@@ -183,7 +183,7 @@ class Resources:
     self.spec.build(self.commons, self.train)
     print "After building spec", mem()
 
-    if word_embeddings_path != "":
+    if word_embeddings_path != "" and word_embeddings_path is not None:
       self.spec.load_word_embeddings(word_embeddings_path)
       print "After loading pre-trained word embeddings", mem()
 

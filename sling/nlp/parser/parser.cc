@@ -207,7 +207,7 @@ void Parser::InitFF(const string &name, FF *ff) {
   ff->prediction = GetParam(name + "/prediction", true);
 }
 
-void Parser::Parse(Document *document) const {
+void Parser::Parse(Document *document, int *top_bad, int *num_top) const {
   // Extract lexical features from document.
   DocumentFeatures features(&lexicon_);
   features.Extract(*document);
@@ -285,6 +285,8 @@ void Parser::Parse(Document *document) const {
         // Get highest scoring allowed action.
         float *output = data.ff_.Get<float>(ff_.output);
         float max_score = -INFINITY;
+        float overall_max = -INFINITY;
+        float overall_max_index = -1;
         for (int a = 0; a < num_actions_; ++a) {
           if (output[a] > max_score) {
             const ParserAction &action = actions_.Action(a);
@@ -293,6 +295,15 @@ void Parser::Parse(Document *document) const {
               max_score = output[a];
             }
           }
+          if (overall_max < output[a]) {
+            overall_max = output[a];
+            overall_max_index = a;
+          }
+        }
+        if (num_top != nullptr) (*num_top)++;
+        if (!state.CanApply(actions_.Action(overall_max_index)) ||
+            actions_.Beyond(overall_max_index)) {
+          if (top_bad != nullptr) (*top_bad)++;
         }
       }
 

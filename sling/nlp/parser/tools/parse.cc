@@ -193,6 +193,7 @@ int main(int argc, char *argv[]) {
     int num_documents = 0;
     int num_tokens = 0;
     clock.start();
+    int num_top = 0, top_bad = 0;
     for (;;) {
       if (FLAGS_maxdocs != -1 && num_documents >= FLAGS_maxdocs) break;
 
@@ -202,11 +203,11 @@ int main(int argc, char *argv[]) {
 
       num_documents++;
       num_tokens += document->num_tokens();
-      if (num_documents % 10 == 0) {
+      if (num_documents % 100 == 0) {
         std::cout << num_documents << " documents\r";
         std::cout.flush();
       }
-      parser.Parse(document);
+      parser.Parse(document, &top_bad, &num_top);
 
       delete document;
     }
@@ -214,6 +215,7 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << num_documents << " documents, "
               << num_tokens << " tokens, "
               << num_tokens / clock.secs() << " tokens/sec";
+    LOG(INFO) << "Num top " << num_top << ", top bad " << top_bad;
     delete corpus;
   }
 

@@ -58,7 +58,10 @@ class Parser {
   void Load(Store *store, const string &filename);
 
   // Parse document.
-  void Parse(Document *document) const;
+  void Parse(Document *document, int *top_bad, int *num_top) const;
+  void Parse(Document *document) const {
+    Parse(document, nullptr, nullptr);
+  }
 
   // Enable profiling. Must be called before Load().
   void EnableProfiling() {

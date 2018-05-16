@@ -61,8 +61,16 @@ class Actions:
     return len(self.table)
 
 
+  def action(self, index):
+    return self.table[index]
+
+
+  def index(self, action):
+    return self.indices.get(action, None)
+
+
   # Adds 'action' to the table.
-  def add(self, action):
+  def add(self, action, count=1):
     index = self.indices.get(action, len(self.table))
     if index == len(self.table):
       self.indices[action] = index
@@ -72,7 +80,7 @@ class Actions:
         role_index = len(self.roles)
         self.role_indices[action.role] = role_index
         self.roles.append(action.role)
-    self.counts[index] = self.counts[index] + 1
+    self.counts[index] = self.counts[index] + count
 
     if action.type == Action.SHIFT:
       self.shift_index = index

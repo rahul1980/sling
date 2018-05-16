@@ -17,11 +17,12 @@
 
 class FF:
   def __init__(
-      self, tf, input, layers, hidden=None, bias=True, activation="Relu"):
+      self, tf, input, layers, output_layers, \
+      hidden=None, bias=True, activation="Relu"):
     self.weights = []
     self.biases = []
     self.hidden_out = None
-    self.output = None
+    self.outputs = []
 
     v = input
     for l in range(len(layers)):
@@ -56,12 +57,38 @@ class FF:
         v.producer.add_attr("input", 1)
         v.producer.add_attr("output", 1)
 
-    self.output = tf.identity(v, name='output')
-    self.output.type = v.type
-    self.output.shape = v.shape
+    height = layers[-1]
+    last_hidden = v
+    self.num_hidden = len(layers)
+    for l in range(len(output_layers)):
+      width = output_layers[l]
+      W = tf.var("W_out" + str(l), type, [height, width])
+      self.weights.append(W)
+      v = tf.matmul(last_hidden, W)
+      v.type = type
+      v.shape = [1, width]
+
+      if bias:
+        b = tf.var("b_out" + str(l), type, [1, width])
+        self.biases.append(b)
+        v = tf.add(v, b)
+        v.type = type
+        v.shape = [1, width]
+
+      output = tf.identity(v, name='output' + str(l))
+      output.type = v.type
+      output.shape = v.shape
+      self.outputs.append(output)
 
 
   def set_layer_data(self, index, weight, bias=None):
+    assert self.num_hidden > index, index
+    self.weights[index].data = weight
+    if bias is not None:
+      self.biases[index].data = bias
+
+  def set_output_layer_data(self, index, weight, bias=None):
+    index += self.num_hidden
     assert len(self.weights) > index, index
     self.weights[index].data = weight
     if bias is not None:
