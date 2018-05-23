@@ -75,7 +75,7 @@ class LexicalEncoder:
     bldr.rename(self.feature_vector, "feature_vector")
     self.feature_vector.ref = True
 
-    # Add BiLSTM. 
+    # Add BiLSTM.
     lr = builder.Builder(flow, "lstm/lr")
     lr_input = lr.var(name="input", shape=[1, spec.lstm_input_dim])
     lr_input.ref = True
@@ -90,5 +90,8 @@ class LexicalEncoder:
     rl_lstm.copy_to_flow_lstm(flow_rl_lstm)
     self.rl_lstm = flow_rl_lstm
 
-    bldr = builder.Builder(flow, "lstm")
-    bldr.cnx("lstm_input", [self.feature_vector, lr_input, rl_input])
+    cnxin = flow.cnx("features")
+    cnxin.add(self.feature_vector)
+    cnxin.add(lr_input)
+    cnxin.add(rl_input)
+

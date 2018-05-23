@@ -26,7 +26,6 @@
 #include "sling/frame/store.h"
 #include "sling/myelin/compute.h"
 #include "sling/myelin/flow.h"
-#include "sling/myelin/profile.h"
 #include "sling/nlp/document/document.h"
 #include "sling/nlp/document/lexical-encoder.h"
 #include "sling/nlp/parser/action-table.h"
@@ -41,20 +40,6 @@ class ParserInstance;
 // Frame semantics parser model.
 class Parser {
  public:
-  // Profile summary for each cell.
-  struct Profile {
-    Profile(Parser *parser)
-      : features(parser->features_cell()), lr(parser->lr_cell()),
-        rl(parser->rl_cell()), ff(parser->ff_.cell) {}
-
-    myelin::ProfileSummary features;  // profile summary for feature extraction
-    myelin::ProfileSummary lr;        // profile summary for LR LSTM
-    myelin::ProfileSummary rl;        // profile summary for RL LSTM
-    myelin::ProfileSummary ff;        // profile summary for FF
-  };
-
-  ~Parser() { delete profile_; }
-
   // Load and initialize parser model.
   void Load(Store *store, const string &filename);
 
@@ -64,7 +49,7 @@ class Parser {
   // Enable profiling. Must be called before Load().
   void EnableProfiling() {
     network_.options().profiling = true;
-    network_.options().external_profiler = true;
+    network_.options().global_profiler = true;
   }
 
   // Enable fast fallback. Must be called before Load().
@@ -73,8 +58,8 @@ class Parser {
   // Run parser on GPU if available. Must be called before Load().
   void EnableGPU();
 
-  // Return profile summary for parser.
-  Profile *profile() const { return profile_; }
+  // Neural network for parser.
+  const myelin::Network &network() const { return network_; }
 
   // Return the lexical encoder.
   const LexicalEncoder &encoder() const { return encoder_; }
@@ -87,7 +72,6 @@ class Parser {
   // Feed-forward cell.
   struct FF {
     myelin::Cell *cell;                       // feed-forward cell
-    myelin::Tensor *profile;                  // FF profiling block
 
     // Features.
     myelin::Tensor *lr_focus_feature;         // LR LSTM input focus feature
@@ -138,9 +122,6 @@ class Parser {
 
   // Feed-forward cell.
   FF ff_;
-
-  // Profile summary.
-  Profile *profile_ = nullptr;
 
   // Number of output actions.
   int num_actions_;

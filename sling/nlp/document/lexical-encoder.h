@@ -137,9 +137,6 @@ class LexicalFeatureExtractor {
   // Data instance for feature extraction.
   myelin::Instance *data() { return &data_; }
 
-  // Set profile summary.
-  void set_profile(myelin::ProfileSummary *s) { data_.set_profile(s); }
-
  private:
   const LexicalFeatures &lex_;
   myelin::Instance data_;
@@ -238,11 +235,6 @@ class LexicalEncoderInstance {
   // encoder. Returns the left-to-right and right-to-left channels for the
   // hidden state of the LSTMs.
   myelin::BiChannel Compute(const Document &document, int begin, int end);
-
-  // Set dedicated profile computation summaries for the various cells.
-  void set_profile(myelin::ProfileSummary *fv,
-                   myelin::ProfileSummary *lr,
-                   myelin::ProfileSummary *rl);
 
  private:
   const LexicalEncoder &encoder_;

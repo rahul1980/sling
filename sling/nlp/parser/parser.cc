@@ -75,9 +75,6 @@ void Parser::Load(Store *store, const string &model) {
   // Initialize feed-forward cell.
   InitFF("ff", &ff_);
 
-  // Initialize profiling.
-  if (ff_.cell->profile()) profile_ = new Profile(this);
-
   // Load commons and action stores.
   myelin::Flow::Blob *commons = flow.DataBlock("commons");
   if (commons != nullptr) {
@@ -101,7 +98,6 @@ void Parser::Load(Store *store, const string &model) {
 void Parser::InitFF(const string &name, FF *ff) {
   // Get cell.
   ff->cell = GetCell(name);
-  ff->profile = ff->cell->profile();
 
   // Get feature inputs.
   ff->lr_focus_feature = GetParam(name + "/lr", true);
@@ -164,9 +160,6 @@ void Parser::Parse(Document *document) const {
     // Initialize parser model instance data.
     ParserInstance data(this, document, s.begin(), s.end());
     LexicalEncoderInstance &encoder = data.encoder_;
-    if (profile_) {
-      encoder.set_profile(&profile_->features, &profile_->lr, &profile_->rl);
-    }
 
     // Run the lexical encoder.
     auto bilstm = encoder.Compute(*document, s.begin(), s.end());
@@ -188,7 +181,6 @@ void Parser::Parse(Document *document) const {
       data.ExtractFeaturesFF(step);
 
       // Predict next action.
-      if (profile_) data.ff_.set_profile(&profile_->ff);
       data.ff_.Compute();
       int prediction = 0;
       if (fast_fallback_) {

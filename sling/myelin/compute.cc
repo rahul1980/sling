@@ -620,8 +620,13 @@ string Tensor::ToString(const char *data, bool deref) const {
 }
 
 Channel::Channel(const Tensor *format) : format_(format) {
-  EnsureAlignment(&alignment_, jit::CPU::CacheLineSize());
+  // Elements must be aligned to the alignment of the tensor format.
+  element_size_ = format->size();
+  EnsureAlignment(&element_size_, format->byte_alignment());
+
+  // Channel are aligned to the element alignment and cache lines.
   EnsureAlignment(&alignment_, format->byte_alignment());
+  EnsureAlignment(&alignment_, jit::CPU::CacheLineSize());
 }
 
 Channel::~Channel() {
@@ -639,9 +644,8 @@ void Channel::resize(int n) {
 
   // Clear new elements.
   if (n > size_) {
-    size_t element_size = format_->size();
-    size_t pos = size_ * element_size;
-    size_t bytes = (n - size_) * element_size;
+    size_t pos = size_ * element_size_;
+    size_t bytes = (n - size_) * element_size_;
     runtime()->ClearChannel(data_, pos, bytes, placement());
   }
 
@@ -659,7 +663,7 @@ void Channel::reset(int n) {
   }
 
   // Clear all elements.
-  runtime()->ClearChannel(data_, 0, n * format_->size(), placement());
+  runtime()->ClearChannel(data_, 0, n * element_size_, placement());
 
   // Change size.
   size_ = n;
@@ -671,10 +675,9 @@ void Channel::reserve(int n) {
   if (n == capacity_) return;
 
   // Allocate or reallocate data buffer.
-  size_t element_size = format_->size();
   data_ = runtime()->AllocateChannel(data_,
-                                     size_ * element_size,
-                                     n * element_size,
+                                     size_ * element_size_,
+                                     n * element_size_,
                                      alignment_,
                                      placement());
 
@@ -683,8 +686,7 @@ void Channel::reserve(int n) {
 }
 
 void Channel::zero(int n) {
-  runtime()->ClearChannel(data_, n * format_->size(), format_->size(),
-                          placement());
+  runtime()->ClearChannel(data_, n * element_size_, element_size_, placement());
 }
 
 string Channel::ToString() const {

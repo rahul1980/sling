@@ -70,7 +70,6 @@ cc_library(
     "//sling/frame:store",
     "//sling/myelin:compute",
     "//sling/myelin:flow",
-    "//sling/myelin:profile",
     "//sling/myelin/kernel:cuda",
     "//sling/myelin/kernel:dragnn",
     "//sling/myelin/kernel:tensorflow",

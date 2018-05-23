@@ -553,6 +553,7 @@ class Sempar(nn.Module):
     # Add link and connector for previous FF steps.
     ff_cnx = ff.cnx("step", args=[])
     ff_steps = link(ff, "steps", spec.ff_hidden_dim, ff_cnx, False)
+    ff_cnx.add(fl.var("ff/hidden:0"))
 
     # Add FF's input variables.
     for feature in spec.ff_fixed_features:

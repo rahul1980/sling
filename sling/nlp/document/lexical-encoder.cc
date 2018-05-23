@@ -376,14 +376,6 @@ myelin::BiChannel LexicalEncoderInstance::Compute(const Document &document,
   return bilstm_.Compute(&fv_);
 }
 
-void LexicalEncoderInstance::set_profile(myelin::ProfileSummary *fv,
-                                         myelin::ProfileSummary *lr,
-                                         myelin::ProfileSummary *rl) {
-  features_.set_profile(fv);
-  bilstm_.set_lr_profile(lr);
-  bilstm_.set_rl_profile(rl);
-}
-
 myelin::BiChannel LexicalEncoderLearner::Compute(const Document &document,
                                                  int begin, int end) {
   // Extract feature and map through feature embeddings.
