@@ -14,6 +14,7 @@
 
 #include "sling/myelin/kernel/dragnn.h"
 
+#include <iostream>
 #include "sling/myelin/compute.h"
 #include "sling/myelin/macro-assembler.h"
 
@@ -77,6 +78,10 @@ class DragnnCollect : public Kernel {
     Tensor *M = step->input(1);
     Tensor *R = step->output(0);
 
+    std::cout << step->name () << " Collect activation shape " << M->shape().ToString() << "\n";
+    std::cout << step->name () << " Collect activation stride " << M->stride().ToString() << "\n";
+    std::cout << step->name () << " Collect activation aligned " << M->aligned().ToString() << "\n";
+    std::cout << step->name () << " Collect activation dim(1) " << M->dim(1) << "\n";
     // Get size of activation vectors.
     int dims = M->dim(1);
 

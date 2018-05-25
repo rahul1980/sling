@@ -114,6 +114,11 @@ void Parser::InitFF(const string &name, FF *ff) {
   ff->input = GetParam(name + "/input", true);
   ff->history_debug = GetParam(name + "/history/MatMul/debug", true);
   ff->history_collect = GetParam(name + "/history/Collect", true);
+  ff->history_indices = GetParam(name + "/history/indices", true);
+  ff->lr_collect = GetParam(name + "/lr/Collect", true);
+  ff->lr_indices = GetParam(name + "/lr/indices", true);
+  ff->frame_end_lr_collect = GetParam(name + "/frame-end-lr/Collect", true);
+  ff->frame_end_lr_indices = GetParam(name + "/frame-end-lr/indices", true);
 
   // Get feature sizes.
   std::vector<myelin::Tensor *> attention_features {
@@ -152,6 +157,7 @@ void Parser::InitFF(const string &name, FF *ff) {
   ff->lr_lstm = GetParam(name + "/link/lr_lstm");
   ff->rl_lstm = GetParam(name + "/link/rl_lstm");
   ff->steps = GetParam(name + "/steps");
+
   ff->hidden = GetParam(name + "/hidden");
   ff->output = GetParam(name + "/output");
   ff->prediction = GetParam(name + "/prediction", true);
@@ -175,6 +181,8 @@ void Parser::Parse(Document *document) const {
     int steps_since_shift = 0;
     int step = 0;
     while (!done) {
+      std::cout << "Processing step " << step << "\n";
+      std::cout << "LR:" << bilstm.lr->ToString() << "\n";
       // Allocate space for next step.
       data.ff_step_.push();
 
@@ -187,10 +195,17 @@ void Parser::Parse(Document *document) const {
 
       // Predict next action.
       data.ff_.Compute();
-      std::cout << "FF_input " << data.ff_.ToString(ff_.input) << "\n";
+      //std::cout << "FF_input " << data.ff_.ToString(ff_.input) << "\n";
       std::cout << "FF_hidden " << data.ff_.ToString(ff_.hidden) << "\n";
+      std::cout << "FF_history_indices " << data.ff_.ToString(ff_.history_indices) << "\n";
       std::cout << "FF_history_collect " << data.ff_.ToString(ff_.history_collect) << "\n";
-      std::cout << "FF_history " << data.ff_.ToString(ff_.history_debug) << "\n";
+      //std::cout << "FF_steps " << data.ff_step_.ToString() << "\n";
+      //std::cout << "FF_history " << data.ff_.ToString(ff_.history_debug) << "\n";
+      std::cout << "FF_lr_indices " << data.ff_.ToString(ff_.lr_indices) << "\n";
+      std::cout << "FF_lr_collect " << data.ff_.ToString(ff_.lr_collect) << "\n";
+      std::cout << "FF_frame_end_lr_indices " << data.ff_.ToString(ff_.frame_end_lr_indices) << "\n";
+      std::cout << "FF_frame_end_lr_acts " << data.ff_.ToString(ff_.frame_end_lr_indices) << "\n";
+      std::cout << "FF_frame_end_lr_collect " << data.ff_.ToString(ff_.frame_end_lr_collect) << "\n";
       int prediction = 0;
       if (fast_fallback_) {
         // Get highest scoring action.
@@ -218,7 +233,7 @@ void Parser::Parse(Document *document) const {
           }
         }
         std::cout << "FF_Best " << prediction << " Score " << max_score
-                  << " " << actions_.Action(prediction).ToString(state.store()) << "\n";
+                  << " " << actions_.Action(prediction).ToString(state.store()) << "\n---------------------\n";
       }
 
       // Apply action to parser state.
@@ -309,14 +324,18 @@ void ParserInstance::ExtractFeaturesFF(int step) {
   if (lr_focus != nullptr) *lr_focus = current;
   if (rl_focus != nullptr) *rl_focus = current;
   std::cout << "lr feature " << current << "\n";
-  std::cout << "rl feature " << current << "\n";
+  //std::cout << "rl feature " << current << "\n";
 
   // Extract frame attention, create, and focus features.
   if (ff.attention_depth > 0) {
     int *lr = GetFF(ff.lr_attention_feature);
+    std::cout << "F: lr address " << lr << "\n";
     int *rl = GetFF(ff.rl_attention_feature);
+    std::cout << "F: rl address " << rl << "\n";
     int *create = GetFF(ff.frame_create_feature);
+    std::cout << "F: create address " << create << "\n";
     int *focus = GetFF(ff.frame_focus_feature);
+    std::cout << "F: focus address " << focus << "\n";
     for (int d = 0; d < ff.attention_depth; ++d) {
       int att = -1;
       int created = -1;
@@ -342,14 +361,15 @@ void ParserInstance::ExtractFeaturesFF(int step) {
 
   // Extract history feature.
   int *history = GetFF(ff.history_feature);
+  std::cout << "F: history address " << history << "\n";
   if (history != nullptr) {
     int h = 0;
     int s = step - 1;
     while (h < ff.history_size && s >= 0) history[h++] = s--;
     while (h < ff.history_size) history[h++] = -1;
-    for (h = 0; h  < ff.history_size; ++h) {
-      std::cout << "History feature " << history[h] << "\n";
-    }
+    //for (h = 0; h  < ff.history_size; ++h) {
+    //  std::cout << "History feature " << history[h] << "\n";
+    //}
   }
 
   // Extract role features.
@@ -360,6 +380,7 @@ void ParserInstance::ExtractFeaturesFF(int step) {
 
     // Extract out roles.
     int *out = GetFF(ff.out_roles_feature);
+    std::cout << "F: out role address " << out << "\n";
     if (out != nullptr) {
       int *end = out + ff.out_roles_size;
       graph.out([&out, end](int f) {
@@ -370,6 +391,7 @@ void ParserInstance::ExtractFeaturesFF(int step) {
 
     // Extract in roles.
     int *in = GetFF(ff.in_roles_feature);
+    std::cout << "F: in role address " << in << "\n";
     if (in != nullptr) {
       int *end = in + ff.in_roles_size;
       graph.in([&in, end](int f) {
@@ -380,6 +402,7 @@ void ParserInstance::ExtractFeaturesFF(int step) {
 
     // Extract unlabeled roles.
     int *unlabeled = GetFF(ff.unlabeled_roles_feature);
+    std::cout << "F: unlabeled role address " << unlabeled << "\n";
     if (unlabeled != nullptr) {
       int *end = unlabeled + ff.unlabeled_roles_size;
       graph.unlabeled([&unlabeled, end](int f) {
@@ -390,6 +413,7 @@ void ParserInstance::ExtractFeaturesFF(int step) {
 
     // Extract labeled roles.
     int *labeled = GetFF(ff.labeled_roles_feature);
+    std::cout << "F: labeled role address " << labeled << "\n";
     if (labeled != nullptr) {
       int *end = labeled + ff.labeled_roles_size;
       graph.labeled([&labeled, end](int f) {

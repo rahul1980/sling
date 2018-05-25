@@ -566,6 +566,7 @@ class Sempar(nn.Module):
       l = bldr.var(name, shape=[-1, dim])
       l.ref = True
       cnx.add(l)
+      print "link(): name =", name, "returning", l.name
       return l
 
     # Add links to the two LSTMs.
@@ -597,6 +598,8 @@ class Sempar(nn.Module):
 
       name = feature.name + "/Collect"
       collect = ff.rawop(optype="Collect", name=name)
+      indices = ff.identity(indices, name=feature.name + "/indices")
+      indices.producer.add_attr("output", 1)
       collect.add_input(indices)
       collect.add_input(activations)
       collected = ff.var(
@@ -613,9 +616,9 @@ class Sempar(nn.Module):
       matmul.add_input(transform)
       output = ff.var(name + ":0", shape=[feature.num, sz[1]])
       matmul.add_output(output)
-      ff_concat_op.add_input(output)
       output = ff.identity(output, name=name + "/debug")
       output.producer.add_attr("output", 1)
+      ff_concat_op.add_input(output)
 
     finish_concat_op(ff, ff_concat_op)
     fl.save(flow_file)
