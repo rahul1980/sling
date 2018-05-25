@@ -89,6 +89,9 @@ class Parser {
     myelin::Tensor *in_roles_feature;         // in roles feature
     myelin::Tensor *unlabeled_roles_feature;  // unlabeled roles feature
     myelin::Tensor *labeled_roles_feature;    // labeled roles feature
+    myelin::Tensor *input;                    // feature vector input
+    myelin::Tensor *history_debug;            // history vector
+    myelin::Tensor *history_collect;          // history vector
 
     int attention_depth = 0;                  // number of attention features
     int history_size = 0;                     // number of history features

@@ -296,13 +296,19 @@ class Sempar(nn.Module):
 
 
   # Returns the outputs from both the LSTMs for all tokens in 'document'.
-  def _lstm_outputs(self, document):
+  def _lstm_outputs(self, document, print_features=False):
     # Compute all raw token features just once for both the LSTMs.
     raw_features = self.spec.raw_lstm_features(document)
+    if print_features:
+      for i, f in enumerate(raw_features):
+        print "Feature", self.spec.lstm_features[i].name, f
     length = document.size()
 
     # 'lstm_inputs' should have shape (length, lstm_input_dim).
     lstm_inputs = self._embedding_lookup(self.lstm_embeddings, raw_features)
+    if print_features:
+      for i in xrange(length):
+        print "Token", str(i) + ": [" + fstr(lstm_inputs[i, :], "%.6f") + "]"
     assert length == lstm_inputs.size(0)
 
     lr_out, _ = self.lr_lstm.forward(lstm_inputs)
@@ -370,6 +376,9 @@ class Sempar(nn.Module):
     ff_input = torch.cat(ff_input_parts, 1).view(-1, 1)
     ff_hidden = self.ff_layer(ff_input)
     ff_hidden = self.ff_relu(ff_hidden)
+    if debug:
+      print "FF_input", "[" + fstr(ff_input, "%.6f") + "]"
+      print "FF_hidden", "[" + fstr(ff_hidden, "%.6f") + "]"
     softmax_output = self.ff_softmax(ff_hidden)
 
     # Store the FF activation for future steps.
@@ -381,7 +390,7 @@ class Sempar(nn.Module):
   # Makes a forward pass over 'document'.
   def forward(self, document, train=False, debug=False):
     # Compute LSTM outputs for all tokens.
-    lr_out, rl_out, _ = self._lstm_outputs(document)
+    lr_out, rl_out, _ = self._lstm_outputs(document, print_features=not train)
 
     # Run FF unit.
     state = ParserState(document, self.spec)
@@ -408,11 +417,23 @@ class Sempar(nn.Module):
       # Number of top-k actions to consider. If all top-k actions are
       # infeasible, then we default to SHIFT or STOP.
       topk = self.spec.num_actions
+
+
+      for i in range(len(lr_out)):
+        p = str(i) + ":"
+        if i == 0: p = "LR:" + p
+        print p, "[" + fstr(lr_out[i], "%.7f") + "]"
+
+      for i in range(len(rl_out)):
+        p = str(i) + ":"
+        if i == 0: p = "RL:" + p
+        print p, "[" + fstr(rl_out[i], "%.7f") + "]"
+
       shift = actions.shift()
       stop = actions.stop()
       predicted = shift
       while predicted != stop:
-        ff_output, _ = self._ff_output(lr_out, rl_out, ff_activations, state)
+        ff_output, _ = self._ff_output(lr_out, rl_out, ff_activations, state, debug=True)
 
         # Find the highest scoring allowed action among the top-k.
         # If all top-k actions are disallowed, then use a fallback action.
@@ -430,6 +451,7 @@ class Sempar(nn.Module):
           predicted = shift if state.current < state.end else stop
 
         action = actions.table[predicted]
+        print "FF_Best", predicted, "Score", fstr(ff_output[predicted], "%.6f")
         state.advance(action)
         if debug:
           print "Predicted", action, "at rank ", rank
@@ -553,7 +575,7 @@ class Sempar(nn.Module):
     # Add link and connector for previous FF steps.
     ff_cnx = ff.cnx("step", args=[])
     ff_steps = link(ff, "steps", spec.ff_hidden_dim, ff_cnx, False)
-    ff_cnx.add(fl.var("ff/hidden:0"))
+    ff_cnx.add(flow_ff.hidden_out)
 
     # Add FF's input variables.
     for feature in spec.ff_fixed_features:
@@ -592,6 +614,8 @@ class Sempar(nn.Module):
       output = ff.var(name + ":0", shape=[feature.num, sz[1]])
       matmul.add_output(output)
       ff_concat_op.add_input(output)
+      output = ff.identity(output, name=name + "/debug")
+      output.producer.add_attr("output", 1)
 
     finish_concat_op(ff, ff_concat_op)
     fl.save(flow_file)

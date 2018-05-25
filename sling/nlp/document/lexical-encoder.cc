@@ -14,6 +14,8 @@
 
 #include "sling/nlp/document/lexical-encoder.h"
 
+#include <iostream>
+
 #include "sling/myelin/builder.h"
 #include "sling/myelin/gradient.h"
 #include "sling/util/embeddings.h"
@@ -32,6 +34,7 @@ void LexicalFeatures::LoadLexicon(Flow *flow) {
   lexicon_.InitWords(&it);
   bool normalize = vocabulary->GetAttr("normalize_digits", false);
   int oov = vocabulary->GetAttr("oov", -1);
+  std::cout << "normalize " << normalize << ", oov " << oov << "\n";
   lexicon_.set_normalize_digits(normalize);
   lexicon_.set_oov(oov);
 
@@ -237,10 +240,13 @@ int LexicalFeatures::LoadWordEmbeddings(const string &filename) {
   return found;
 };
 
+#define FEAT(index, name, val) std::cout << "Token " << (index) << " " << (name) << " " << (val) << "\n";
+
 void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
                                       int index, float *fv) {
   // Extract word feature.
   if (lex_.word_feature_) {
+    FEAT(index, "word", features.word(index))
     *data_.Get<int>(lex_.word_feature_) = features.word(index);
   }
 
@@ -264,6 +270,7 @@ void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
     int *a = data_.Get<int>(lex_.suffix_feature_);
     for (int n = 0; n < lex_.suffix_size_; ++n) {
       if (affix != nullptr) {
+        FEAT(index, "suffix", affix->id())
         *a++ = affix->id();
         affix = affix->shorter();
       } else {
@@ -274,26 +281,31 @@ void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
 
   // Extract hyphen feature.
   if (lex_.hyphen_feature_) {
+    FEAT(index, "hyphen", features.hyphen(index))
     *data_.Get<int>(lex_.hyphen_feature_) = features.hyphen(index);
   }
 
   // Extract capitalization feature.
   if (lex_.caps_feature_) {
+    FEAT(index, "capitalization", features.capitalization(index))
     *data_.Get<int>(lex_.caps_feature_) = features.capitalization(index);
   }
 
   // Extract punctuation feature.
   if (lex_.punct_feature_) {
+    FEAT(index, "punctuation", features.punctuation(index))
     *data_.Get<int>(lex_.punct_feature_) = features.punctuation(index);
   }
 
   // Extract quote feature.
   if (lex_.quote_feature_) {
+    FEAT(index, "quote", features.quote(index))
     *data_.Get<int>(lex_.quote_feature_) = features.quote(index);
   }
 
   // Extract digit feature.
   if (lex_.digit_feature_) {
+    FEAT(index, "digit", features.digit(index))
     *data_.Get<int>(lex_.digit_feature_) = features.digit(index);
   }
 
@@ -317,6 +329,7 @@ void LexicalFeatureExtractor::Extract(const Document &document,
     float *f = reinterpret_cast<float *>(fv->at(i));
     Compute(features, i, f);
   }
+  std::cout << fv->ToString();
 }
 
 Channel *LexicalFeatureLearner::Extract(const Document &document,

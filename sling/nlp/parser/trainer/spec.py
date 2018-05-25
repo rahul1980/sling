@@ -116,6 +116,9 @@ class Spec:
       # Frame limit for other link features.
       self.frame_limit = 2
 
+      # Link feature dimensionalities.
+      self.link_dim_lstm = 8
+      self.link_dim_non_lstm = 10
     else:
       # Network dimensionalities.
       self.lstm_hidden_dim = 256
@@ -133,6 +136,10 @@ class Spec:
 
       # Frame limit for other link features.
       self.frame_limit = 5
+
+      # Link feature dimensionalities.
+      self.link_dim_lstm = 32
+      self.link_dim_non_lstm = 64
 
     # Resources.
     self.commons = None
@@ -263,13 +270,13 @@ class Spec:
       self.add_ff_fixed("labeled-roles", dim, num_roles * fl * fl, num)
       self.add_ff_fixed("unlabeled-roles", dim, fl * fl, num)
 
-    self.add_ff_link("frame-creation-steps", 64, self.ff_hidden_dim, fl)
-    self.add_ff_link("frame-focus-steps", 64, self.ff_hidden_dim, fl)
-    self.add_ff_link("frame-end-lr", 32, self.lstm_hidden_dim, fl)
-    self.add_ff_link("frame-end-rl", 32, self.lstm_hidden_dim, fl)
-    self.add_ff_link("history", 64, self.ff_hidden_dim, self.history_limit)
-    self.add_ff_link("lr", 32, self.lstm_hidden_dim, 1)
-    self.add_ff_link("rl", 32, self.lstm_hidden_dim, 1)
+    self.add_ff_link("frame-creation-steps", self.link_dim_non_lstm, self.ff_hidden_dim, fl)
+    self.add_ff_link("frame-focus-steps", self.link_dim_non_lstm, self.ff_hidden_dim, fl)
+    self.add_ff_link("frame-end-lr", self.link_dim_lstm, self.lstm_hidden_dim, fl)
+    self.add_ff_link("frame-end-rl", self.link_dim_lstm, self.lstm_hidden_dim, fl)
+    self.add_ff_link("history", self.link_dim_non_lstm, self.ff_hidden_dim, self.history_limit)
+    self.add_ff_link("lr", self.link_dim_lstm, self.lstm_hidden_dim, 1)
+    self.add_ff_link("rl", self.link_dim_lstm, self.lstm_hidden_dim, 1)
 
     self.ff_input_dim = sum([f.dim for f in self.ff_fixed_features])
     self.ff_input_dim += sum(

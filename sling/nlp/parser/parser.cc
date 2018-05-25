@@ -111,6 +111,9 @@ void Parser::InitFF(const string &name, FF *ff) {
   ff->in_roles_feature = GetParam(name + "/in-roles", true);
   ff->unlabeled_roles_feature = GetParam(name + "/unlabeled-roles", true);
   ff->labeled_roles_feature = GetParam(name + "/labeled-roles", true);
+  ff->input = GetParam(name + "/input", true);
+  ff->history_debug = GetParam(name + "/history/MatMul/debug", true);
+  ff->history_collect = GetParam(name + "/history/Collect", true);
 
   // Get feature sizes.
   std::vector<myelin::Tensor *> attention_features {
@@ -163,6 +166,8 @@ void Parser::Parse(Document *document) const {
 
     // Run the lexical encoder.
     auto bilstm = encoder.Compute(*document, s.begin(), s.end());
+    std::cout << "LR:" << bilstm.lr->ToString() << "\n";
+    std::cout << "RL:" << bilstm.rl->ToString() << "\n";
 
     // Run FF to predict transitions.
     ParserState &state = data.state_;
@@ -182,6 +187,10 @@ void Parser::Parse(Document *document) const {
 
       // Predict next action.
       data.ff_.Compute();
+      std::cout << "FF_input " << data.ff_.ToString(ff_.input) << "\n";
+      std::cout << "FF_hidden " << data.ff_.ToString(ff_.hidden) << "\n";
+      std::cout << "FF_history_collect " << data.ff_.ToString(ff_.history_collect) << "\n";
+      std::cout << "FF_history " << data.ff_.ToString(ff_.history_debug) << "\n";
       int prediction = 0;
       if (fast_fallback_) {
         // Get highest scoring action.
@@ -208,6 +217,8 @@ void Parser::Parse(Document *document) const {
             }
           }
         }
+        std::cout << "FF_Best " << prediction << " Score " << max_score
+                  << " " << actions_.Action(prediction).ToString(state.store()) << "\n";
       }
 
       // Apply action to parser state.
@@ -297,6 +308,8 @@ void ParserInstance::ExtractFeaturesFF(int step) {
   int *rl_focus = GetFF(ff.rl_focus_feature);
   if (lr_focus != nullptr) *lr_focus = current;
   if (rl_focus != nullptr) *rl_focus = current;
+  std::cout << "lr feature " << current << "\n";
+  std::cout << "rl feature " << current << "\n";
 
   // Extract frame attention, create, and focus features.
   if (ff.attention_depth > 0) {
@@ -334,6 +347,9 @@ void ParserInstance::ExtractFeaturesFF(int step) {
     int s = step - 1;
     while (h < ff.history_size && s >= 0) history[h++] = s--;
     while (h < ff.history_size) history[h++] = -1;
+    for (h = 0; h  < ff.history_size; ++h) {
+      std::cout << "History feature " << history[h] << "\n";
+    }
   }
 
   // Extract role features.
