@@ -33,7 +33,6 @@
 #include "sling/base/logging.h"
 #include "sling/base/strtoint.h"
 #include "sling/string/ctype.h"
-#include "sling/string/printf.h"
 
 namespace sling {
 
@@ -640,10 +639,6 @@ char *FastInt64ToBuffer(int64 i, char *buffer) {
   return buffer;
 }
 
-// Offset into buffer where FastInt32ToBuffer places the end of string
-// nul character.  Also used by FastInt32ToBufferLeft
-static const int kFastInt32ToBufferOffset = 11;
-
 char *FastInt32ToBuffer(int32 i, char *buffer) {
   FastInt32ToBufferLeft(i, buffer);
   return buffer;
@@ -705,13 +700,6 @@ const char two_ASCII_digits[100][2] = {
   {'9', '0'}, {'9', '1'}, {'9', '2'}, {'9', '3'}, {'9', '4'},
   {'9', '5'}, {'9', '6'}, {'9', '7'}, {'9', '8'}, {'9', '9'}
 };
-
-static inline void PutTwoDigits(int i, char *p) {
-  DCHECK_GE(i, 0);
-  DCHECK_LT(i, 100);
-  p[0] = two_ASCII_digits[i][0];
-  p[1] = two_ASCII_digits[i][1];
-}
 
 // ----------------------------------------------------------------------
 // FastInt32ToBufferLeft()
@@ -1204,42 +1192,6 @@ string SimpleItoaWithCommas(uint64 i) {
     // For this unrolling, we check if i == 0 in the main while loop
   }
   return string(p, local + sizeof(local));
-}
-
-// ----------------------------------------------------------------------
-// ItoaKMGT()
-//    Description: converts an integer to a string
-//    Truncates values to a readable unit: K, G, M or T
-//    Opposite of atoi_kmgt()
-//    e.g. 100 -> "100" 1500 -> "1500"  4000 -> "3K"   57185920 -> "45M"
-//
-//    Return value: string
-// ----------------------------------------------------------------------
-string ItoaKMGT(int64 i) {
-  const char *sign = "", *suffix = "";
-  if (i < 0) {
-    // We lose some accuracy if the caller passes LONG_LONG_MIN, but
-    // that's OK as this function is only for human readability
-    if (i == std::numeric_limits<int64>::min()) i++;
-    sign = "-";
-    i = -i;
-  }
-
-  int64 val;
-
-  if ((val = (i >> 40)) > 1) {
-    suffix = "T";
-  } else if ((val = (i >> 30)) > 1) {
-    suffix = "G";
-  } else if ((val = (i >> 20)) > 1) {
-    suffix = "M";
-  } else if ((val = (i >> 10)) > 1) {
-    suffix = "K";
-  } else {
-    val = i;
-  }
-
-  return StringPrintf("%s%lld%s", sign, val, suffix);
 }
 
 }  // namespace sling

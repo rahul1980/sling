@@ -16,6 +16,7 @@
 
 #include "sling/nlp/document/document.h"
 #include "sling/nlp/document/document-tokenizer.h"
+#include "sling/nlp/document/lex.h"
 #include "sling/nlp/parser/parser.h"
 #include "sling/pyapi/pyframe.h"
 #include "sling/pyapi/pystore.h"
@@ -27,15 +28,16 @@ PyTypeObject PyTokenizer::type;
 PyTypeObject PyParser::type;
 
 PyMethodDef PyTokenizer::methods[] = {
-  {"tokenize", (PyCFunction) &PyTokenizer::Tokenize, METH_VARARGS, ""},
+  {"tokenize", PYFUNC(PyTokenizer::Tokenize), METH_VARARGS, ""},
+  {"lex", PYFUNC(PyTokenizer::Lex), METH_VARARGS, ""},
   {nullptr}
 };
 
 void PyTokenizer::Define(PyObject *module) {
   InitType(&type, "sling.api.Tokenizer", sizeof(PyTokenizer), true);
 
-  type.tp_init = reinterpret_cast<initproc>(&PyTokenizer::Init);
-  type.tp_dealloc = reinterpret_cast<destructor>(&PyTokenizer::Dealloc);
+  type.tp_init = method_cast<initproc>(&PyTokenizer::Init);
+  type.tp_dealloc = method_cast<destructor>(&PyTokenizer::Dealloc);
   type.tp_methods = methods;
 
   RegisterType(&type, module, "Tokenizer");
@@ -78,16 +80,45 @@ PyObject *PyTokenizer::Tokenize(PyObject *args) {
   return frame->AsObject();
 }
 
+PyObject *PyTokenizer::Lex(PyObject *args) {
+  // Get arguments.
+  PyStore *pystore;
+  PyObject *lex;
+  if (!PyArg_ParseTuple(args, "OS", &pystore, &lex)) return nullptr;
+  if (!PyObject_TypeCheck(pystore, &PyStore::type)) return nullptr;
+  if (!pystore->Writable()) return nullptr;
+
+  // Get text.
+  char *data;
+  Py_ssize_t length;
+  PyString_AsStringAndSize(lex, &data, &length);
+
+  // Initialize empty document.
+  nlp::Document document(pystore->store);
+
+  // Parse LEX-encoded text.
+  nlp::DocumentLexer lexer(tokenizer);
+  if (!lexer.Lex(&document, Text(data, length))) {
+    PyErr_SetString(PyExc_ValueError, "Invalid LEX encoding");
+    return nullptr;
+  }
+
+  // Create document frame wrapper.
+  PyFrame *frame = PyObject_New(PyFrame, &PyFrame::type);
+  frame->Init(pystore, document.top().handle());
+  return frame->AsObject();
+}
+
 PyMethodDef PyParser::methods[] = {
-  {"parse", (PyCFunction) &PyParser::Parse, METH_VARARGS, ""},
+  {"parse", PYFUNC(PyParser::Parse), METH_VARARGS, ""},
   {nullptr}
 };
 
 void PyParser::Define(PyObject *module) {
   InitType(&type, "sling.api.Parser", sizeof(PyParser), true);
 
-  type.tp_init = reinterpret_cast<initproc>(&PyParser::Init);
-  type.tp_dealloc = reinterpret_cast<destructor>(&PyParser::Dealloc);
+  type.tp_init = method_cast<initproc>(&PyParser::Init);
+  type.tp_dealloc = method_cast<destructor>(&PyParser::Dealloc);
   type.tp_methods = methods;
 
   RegisterType(&type, module, "Parser");
@@ -139,6 +170,23 @@ PyObject *PyParser::Parse(PyObject *args) {
   document.Update();
 
   Py_RETURN_NONE;
+}
+
+PyObject *PyToLex(PyObject *self, PyObject *args) {
+  // Get arguments.
+  PyFrame *pyframe;
+  if (!PyArg_ParseTuple(args, "O", &pyframe)) return nullptr;
+  if (!PyObject_TypeCheck(pyframe, &PyFrame::type)) return nullptr;
+
+  // Initialize document from frame.
+  Frame top(pyframe->pystore->store, pyframe->handle());
+  nlp::Document document(top);
+
+  // Convert to LEX.
+  string lex = nlp::ToLex(document);
+
+  // Return LEX representation.
+  return PyString_FromStringAndSize(lex.data(), lex.size());
 }
 
 }  // namespace sling

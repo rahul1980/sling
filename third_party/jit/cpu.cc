@@ -29,9 +29,6 @@
 // modified significantly by Google Inc.
 // Copyright 2017 Google Inc. All rights reserved.
 
-#include <sys/sysinfo.h>
-#include <utility>
-
 #include "third_party/jit/cpu.h"
 
 #include "sling/base/logging.h"
@@ -206,6 +203,7 @@ const char *ProcessorInformation::architecture() {
       return "Skylake";
 
     case 0x063D:
+    case 0x064F:
       return "Broadwell";
 
     case 0x063C:
@@ -315,10 +313,30 @@ void CPU::Initialize() {
   }
 }
 
+#if defined( __linux__)
+#include <sys/sysinfo.h>
+
 int CPU::Processors() {
-  Probe();
   return get_nprocs();
 }
+
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+
+int CPU::Processors() {
+  int cpus = 1;
+  size_t len = sizeof(cpus);
+  sysctlbyname("hw.logicalcpu", &cpus, &len, nullptr, 0);
+  return cpus;
+}
+
+#else
+
+int CPU::Processors() {
+  return 1;
+}
+
+#endif
 
 }  // namespace jit
 }  // namespace sling

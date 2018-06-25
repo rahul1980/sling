@@ -54,7 +54,7 @@ class VectorFltAVX256Generator : public ExpressionGenerator {
     int num_mm_aux = 0;
     if (!CPU::Enabled(AVX2)) {
       if (instructions_.Has(Express::SHR23) ||
-         instructions_.Has(Express::SHL23)) {
+          instructions_.Has(Express::SHL23)) {
         num_mm_aux = std::max(num_mm_aux, 1);
       }
       if (instructions_.Has(Express::SUBINT)) {
@@ -202,7 +202,7 @@ class VectorFltAVX256Generator : public ExpressionGenerator {
         GenerateYMMFltOp(instr,
             &Assembler::vroundps, &Assembler::vroundpd,
             &Assembler::vroundps, &Assembler::vroundpd,
-            kRoundDown, masm);
+            round_down, masm);
         break;
       case Express::CVTFLTINT:
         GenerateYMMFltOp(instr,

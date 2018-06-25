@@ -49,13 +49,13 @@ class FF:
         v.shape = [1, width]
 
       if l == hidden:
-        self.hidden_out = v
         v = tf.identity(v, name="hidden")
         v.type = type
         v.shape = [1, width]
         v.ref = True
         v.producer.add_attr("input", 1)
         v.producer.add_attr("output", 1)
+        self.hidden_out = v
 
     height = layers[-1]
     last_hidden = v

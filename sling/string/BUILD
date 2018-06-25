@@ -4,7 +4,6 @@ cc_library(
   name = "string",
   deps = [
     ":ctype",
-    ":memutil",
     ":numbers",
     ":printf",
     ":strcat",
@@ -22,32 +21,12 @@ cc_library(
 )
 
 cc_library(
-  name = "memutil",
-  hdrs = ["memutil.h"],
-  srcs = ["memutil.cc"],
-  deps = [
-    ":ctype",
-    "//sling/base",
-  ],
-  copts = [
-    "-Wno-sign-compare",
-    "-Wno-deprecated",
-  ],
-)
-
-cc_library(
   name = "numbers",
   hdrs = ["numbers.h"],
   srcs = ["numbers.cc"],
   deps = [
     ":ctype",
-    ":printf",
     "//sling/base",
-  ],
-  copts = [
-    "-Wno-narrowing",
-    "-Wno-sign-compare",
-    "-Wno-deprecated",
   ],
 )
 
@@ -70,10 +49,6 @@ cc_library(
     ":text",
     "//sling/base",
   ],
-  copts = [
-    "-Wno-sign-compare",
-    "-Wno-deprecated",
-  ],
 )
 
 cc_library(
@@ -81,7 +56,6 @@ cc_library(
   hdrs = ["text.h"],
   srcs = ["text.cc"],
   deps = [
-    ":memutil",
     "//sling/base",
     "//sling/util:city",
   ],

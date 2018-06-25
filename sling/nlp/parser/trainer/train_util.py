@@ -69,22 +69,22 @@ def setup_training_flags(flags):
                metavar='DIR')
   flags.define('--commons',
                help='Path to the commons store file',
-               default="",
+               default="local/data/corpora/sempar/commons.sling",
                type=str,
                metavar='COMMONS_FILE')
   flags.define('--train_corpus', '--train',
                help='Path to the train corpus recordio',
-               default="",
+               default="local/data/corpora/sempar/train.rec",
                type=str,
                metavar='TRAIN_RECORDIO')
   flags.define('--dev_corpus', '--dev',
                help='Path to the dev corpus recordio',
-               default="",
+               default="local/data/corpora/sempar/dev.rec",
                type=str,
                metavar='DEV_RECORDIO')
   flags.define('--word_embeddings',
                help='(Optional) Path to the word embeddings file',
-               default="",
+               default="local/data/corpora/sempar/word2vec-32-embeddings.bin",
                type=str,
                metavar='WORD_EMBEDDINGS_FILE')
 
@@ -165,7 +165,8 @@ class Resources:
   def load(self,
            commons_path,
            train_path,
-           word_embeddings_path=None):
+           word_embeddings_path=None,
+           small_spec=False):
     print "Loading training resources"
     print "Initial memory usage", mem()
     self.commons_path = commons_path
@@ -178,7 +179,7 @@ class Resources:
         train_path, self.commons, self.schema, gold=True, loop=False)
     print "Pointed to training corpus in", train_path, mem()
 
-    self.spec = Spec()
+    self.spec = Spec(small_spec)
     self.spec.commons_path = commons_path
     self.spec.build(self.commons, self.train)
     print "After building spec", mem()

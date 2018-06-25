@@ -16,8 +16,18 @@
 #define SLING_PYAPI_PYBASE_H_
 
 #include <python2.7/Python.h>
+#include <python2.7/structmember.h>
 
 namespace sling {
+
+template <class Dest, class Source>
+inline Dest method_cast(const Source &source) {
+  Dest dest;
+  memcpy(&dest, &source, sizeof(dest));
+  return dest;
+}
+
+#define PYFUNC(method) method_cast<PyCFunction>(&method)
 
 // Base class for Python wrapper objects. This has the Python object header
 // information for reference counting and type information.
@@ -44,6 +54,11 @@ struct PyBase : public PyVarObject {
   static void RegisterType(PyTypeObject *type,
                            PyObject *module,
                            const char *name);
+
+  // Register constant value in namespace of the module.
+  static void RegisterEnum(PyObject *module,
+                           const char *name,
+                           int value);
 };
 
 }  // namespace sling
