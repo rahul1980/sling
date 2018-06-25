@@ -262,9 +262,9 @@ class Sempar(nn.Module):
     # where 'dim' is the dimensionality of the embedding.
     for f in self.spec.lstm_features:
       coeff = 1.0 / math.sqrt(f.dim)
-      data = f.embedding.weight.data
-      data.normal_()
-      data.mul_(coeff)
+      matrix = f.embedding.weight.data
+      matrix.normal_()
+      matrix.mul_(coeff)
 
       # Override with pre-trained word embeddings, if provided.
       if f.name == "word" and self.spec.word_embeddings is not None:
@@ -275,8 +275,7 @@ class Sempar(nn.Module):
         data = torch.nn.functional.normalize(data)
 
         # Copy the normalized embeddings at appropriate indices.
-        lr.index_copy_(0, indices, data)
-        rl.index_copy_(0, indices, data)
+        matrix.index_copy_(0, indices, data)
         print "Overwrote", len(self.spec.word_embeddings), f.name, \
             "embedding vectors with normalized pre-trained vectors."
 
@@ -288,7 +287,7 @@ class Sempar(nn.Module):
     for f in self.spec.ff_link_features:
       f.transform.init(1.0 / math.sqrt(f.dim))
 
-    # Initialize the LSTM and FF parameters with gaussan(mean=0, stddev=1e-4).
+    # Initialize the LSTM and FF parameters with gaussian(mean=0, stddev=1e-4).
     params = [self.ff_layer.weight]
     params += [head.softmax.weight for head in self.ff_heads]
     params += [p for p in self.lr_lstm.parameters()]
@@ -428,10 +427,11 @@ class Sempar(nn.Module):
 
       # Translate the gold actions into their cascade equivalents.
       cascade_gold = cascade.translate(document.gold)
-      for g in document.gold:
-        print "True gold", g
-      print  "VVV"
+      #for g in document.gold:
+      #  print "True gold", g
+      #print  "VVV"
       gold_index = 0
+      losses = {}
       while not state.done:
         # Compute the hidden layer once for all cascade delegates.
         ff_hidden, _ = self._ff_hidden(lr_out, rl_out, ff_activations, state)
@@ -441,14 +441,15 @@ class Sempar(nn.Module):
           # Get the gold action for the delegate and compute loss w.r.t. it.
           gold = cascade_gold[gold_index]
           step_loss = cascade.loss(delegate_index, state, ff_hidden, gold)
-          print "Training, delegate", delegate_index, "gold", gold, "loss", fstr(step_loss)
-          if gold.is_stop(): print
+          if delegate_index not in losses:
+            losses[delegate_index] = 0
+          losses[delegate_index] += step_loss.data[0]
+          #print "Training, delegate", delegate_index, "gold", gold, "loss", fstr(step_loss)
+          #if gold.is_stop(): print
           if delegate_index == 0: loss += step_loss
 
           # If the gold action was a CASCADE, move to the next delegate.
-          if gold.is_cascade():   # short-hand for (gold.type == CASCADE)
-            # Note: We can add a 'delegate' field to Action, and then
-            # the next() method below can be replaced by 'gold.delegate'.
+          if gold.is_cascade():
             delegate_index = cascade.next(gold, delegate_index)
           else:
             # Not a CASCADE action. Apply it to the state and move on.
@@ -456,7 +457,7 @@ class Sempar(nn.Module):
             cascading = False
           gold_index += 1
 
-      return loss, len(cascade_gold)
+      return loss, len(cascade_gold), losses
     else:
       if document.size() == 0: return state
 
@@ -507,7 +508,6 @@ class Sempar(nn.Module):
           if best.is_stop(): print "\n"
 
       return state, disallowed_counts, total_counts
-
 
 
   # Writes model as a Myelin flow to 'flow_file'.

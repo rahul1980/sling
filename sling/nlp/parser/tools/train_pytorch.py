@@ -168,15 +168,20 @@ class Trainer:
     del self.batch_loss
     self.batch_loss = Var(torch.FloatTensor([0.0]))
     self.optimizer.zero_grad()
+    self.losses = {}
 
 
   # Processes a single given example.
   def process(self, example):
-    loss, num_transitions = self.model.forward(example, train=True)
+    loss, num_transitions, losses = self.model.forward(example, train=True)
     self.current_batch_num_transitions += num_transitions
     self.batch_loss += loss
     self.current_batch_size += 1
     self.count += 1
+    for k, v in losses.iteritems():
+      if k not in self.losses:
+        self.losses[k] = 0
+      self.losses[k] += v
     if self.current_batch_size == self.hyperparams.batch_size:
       self.update()
     if self.count % self.hyperparams.report_every == 0:
@@ -193,6 +198,8 @@ class Trainer:
   # Performs a gradient update.
   def update(self):
     if self.current_batch_size > 0:
+      for k,v in self.losses.iteritems():
+        print "Loss for", k, "=", v
       start = time.time()
       self.batch_loss /= self.current_batch_num_transitions
 

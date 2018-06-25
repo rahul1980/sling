@@ -157,10 +157,6 @@ void Parser::InitFF(const string &name, FF *ff) {
 }
 
 void Parser::Parse(Document *document, int *top_bad, int *num_top) const {
-  // Extract lexical features from document.
-  DocumentFeatures features(&lexicon_);
-  features.Extract(*document);
-
   // Parse each sentence of the document.
   for (SentenceIterator s(document); s.more(); s.next()) {
     // Initialize parser model instance data.
@@ -205,8 +201,8 @@ void Parser::Parse(Document *document, int *top_bad, int *num_top) const {
         // Get highest scoring allowed action.
         float *output = data.ff_.Get<float>(ff_.output);
         float max_score = -INFINITY;
-        float overall_max = -INFINITY;
-        float overall_max_index = -1;
+        float unconstrained_max = -INFINITY;
+        float unconstrained_max_index = -1;
         for (int a = 0; a < num_actions_; ++a) {
           if (output[a] > max_score) {
             const ParserAction &action = actions_.Action(a);
@@ -215,14 +211,14 @@ void Parser::Parse(Document *document, int *top_bad, int *num_top) const {
               max_score = output[a];
             }
           }
-          if (overall_max < output[a]) {
-            overall_max = output[a];
-            overall_max_index = a;
+          if (unconstrained_max < output[a]) {
+            unconstrained_max = output[a];
+            unconstrained_max_index = a;
           }
         }
         if (num_top != nullptr) (*num_top)++;
-        if (!state.CanApply(actions_.Action(overall_max_index)) ||
-            actions_.Beyond(overall_max_index)) {
+        if (!state.CanApply(actions_.Action(unconstrained_max_index)) ||
+            actions_.Beyond(unconstrained_max_index)) {
           if (top_bad != nullptr) (*top_bad)++;
         }
       }
