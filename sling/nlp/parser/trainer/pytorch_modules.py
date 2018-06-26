@@ -191,7 +191,7 @@ class SoftmaxHead:
   def __call__(self, ff_hidden, train=False):
     logits = self.softmax(ff_hidden)
     if not train:
-      best_score, best_index = torch.max(logits, 0)
+      best_score, best_index = torch.max(logits, 1)
       return best_index.data[0]
     return logits
 
@@ -204,6 +204,45 @@ class SoftmaxLoss:
   def __call__(self, logits, gold_index):
     gold_var = Var(torch.LongTensor([gold_index]))
     return self.fn(logits, gold_var)
+
+
+class Losses:
+  def __init__(self):
+    self.losses = {}
+
+  def add(self, delegate_index, step_loss, count=1):
+    if delegate_index not in self.losses:
+      self.losses[delegate_index] = [Var(torch.Tensor([0.0])), 0]
+    self.losses[delegate_index][0] += step_loss
+    self.losses[delegate_index][1] += count
+    
+  def aggregate(self, other):
+    for delegate, value in other.losses.iteritems():
+      self.add(delegate, value[0], value[1])
+
+  def total(self):
+    loss = 0
+    count = 0
+    for _,v in self.losses.iteritems():
+      loss += v[0]
+      count += v[1]
+    return (loss, count)
+
+  def average(self):
+    (loss, count) = self.total()
+    return loss / count
+
+  def tostring(self, after=None):
+    s = ""
+    for k in sorted(self.losses.keys()):
+      if s != "": s += "\n"
+      s += "AvgDelegateLoss for " + str(k)
+      if after is not None:
+        s += " after " + str(after) + " examples "
+      l = self.losses[k]
+      s += "= " + str(l[0].data[0]) + "/" + str(l[1]) + " = "
+      s += str(l[0].data[0] / l[1])
+    return s
 
 
 # Top-level module for SEMPAR.
@@ -423,7 +462,7 @@ class Sempar(nn.Module):
     ff_activations = []
 
     if train:
-      loss = Var(torch.Tensor([0]))
+      losses = Losses()
 
       # Translate the gold actions into their cascade equivalents.
       cascade_gold = cascade.translate(document.gold)
@@ -431,7 +470,6 @@ class Sempar(nn.Module):
       #  print "True gold", g
       #print  "VVV"
       gold_index = 0
-      losses = {}
       while not state.done:
         # Compute the hidden layer once for all cascade delegates.
         ff_hidden, _ = self._ff_hidden(lr_out, rl_out, ff_activations, state)
@@ -441,12 +479,9 @@ class Sempar(nn.Module):
           # Get the gold action for the delegate and compute loss w.r.t. it.
           gold = cascade_gold[gold_index]
           step_loss = cascade.loss(delegate_index, state, ff_hidden, gold)
-          if delegate_index not in losses:
-            losses[delegate_index] = 0
-          losses[delegate_index] += step_loss.data[0]
+          losses.add(delegate_index, step_loss)
           #print "Training, delegate", delegate_index, "gold", gold, "loss", fstr(step_loss)
           #if gold.is_stop(): print
-          if delegate_index == 0: loss += step_loss
 
           # If the gold action was a CASCADE, move to the next delegate.
           if gold.is_cascade():
@@ -457,7 +492,7 @@ class Sempar(nn.Module):
             cascading = False
           gold_index += 1
 
-      return loss, len(cascade_gold), losses
+      return losses
     else:
       if document.size() == 0: return state
 
@@ -485,9 +520,9 @@ class Sempar(nn.Module):
           # of an evoke, and this delegate decided on the type, then this
           # delegate can directly output EVOKE(length, type).
           best = cascade.predict(delegate_index, state, last, ff_hidden)
-          print "Delegate", delegate_index, "->", best
 
           if best.is_cascade():
+            #print "Delegate", delegate_index, "->", best
             # Move to the next delegate in the cascade.
             delegate_index = cascade.next(best, delegate_index)
             last = best
@@ -495,17 +530,18 @@ class Sempar(nn.Module):
             # We have an action that can be applied to the parser state.
             # See if it is not allowed, then we default to SHIFT or STOP.
             index = actions.index(best)
+            #print "Delegate", delegate_index, "->", best, " (", index , ")"
             total_counts[delegate_index] += 1
             if actions.disallowed[index] or not state.is_allowed(index):
               disallowed_counts[delegate_index] += 1
               best = shift
               if state.current == state.end: best = stop
-              print "           Corrected to", best
+              #print "           Corrected to", best
 
             # Apply the action and stop the cascade.
             state.advance(best)
             cascading = False
-          if best.is_stop(): print "\n"
+          #if best.is_stop(): print "\n"
 
       return state, disallowed_counts, total_counts
 

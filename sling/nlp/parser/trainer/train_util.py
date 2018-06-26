@@ -57,7 +57,8 @@ def now():
 
 def mem():
   p = psutil.Process(os.getpid())
-  return str(p.memory_info())
+  info = p.memory_info()
+  return "(rss=%r vms=%r)" % (info.rss, info.vms)
 
 
 # Sets up commonly used command-line training flags.

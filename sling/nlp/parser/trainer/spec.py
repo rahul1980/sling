@@ -321,7 +321,7 @@ class Spec:
     self._specify_features()
 
     # Build cascade.
-    self.cascade = cascade.FlatCascade(self.actions)
+    self.cascade = cascade.ShiftPropbankEvokeCascade(self.actions)
     print self.cascade
 
 

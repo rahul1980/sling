@@ -30,6 +30,7 @@ import train_util as utils
 from train_util import mem
 from train_util import now
 from train_util import Resources
+from pytorch_modules import Losses
 from pytorch_modules import Sempar
 from pytorch_modules import fstr
 
@@ -139,10 +140,8 @@ class Trainer:
 
     self.count = 0
     self.last_eval_count = 0
-
-    self.current_batch_num_transitions = 0
-    self.current_batch_size = 0
-    self.batch_loss = Var(torch.FloatTensor([0.0]))
+    self.last_update_count = 0
+    self.batch_losses = None
     self._reset()
 
     self.checkpoint_metrics = []
@@ -159,30 +158,17 @@ class Trainer:
 
   # Resets the state for a new batch.
   def _reset(self):
-    self.current_batch_size = 0
-    self.current_batch_num_transitions = 0
-    
-    # Note: self.batch_loss is the apex of the computation graph.
-    # Just resetting it often doesn't guarantee (immediate) garbage collection.
-    # Explicitly deleting it here seems to work better empirically.
-    del self.batch_loss
-    self.batch_loss = Var(torch.FloatTensor([0.0]))
     self.optimizer.zero_grad()
-    self.losses = {}
+    del self.batch_losses
+    self.batch_losses = Losses()
 
 
   # Processes a single given example.
   def process(self, example):
-    loss, num_transitions, losses = self.model.forward(example, train=True)
-    self.current_batch_num_transitions += num_transitions
-    self.batch_loss += loss
-    self.current_batch_size += 1
+    example_losses = self.model.forward(example, train=True)
+    self.batch_losses.aggregate(example_losses)
     self.count += 1
-    for k, v in losses.iteritems():
-      if k not in self.losses:
-        self.losses[k] = 0
-      self.losses[k] += v
-    if self.current_batch_size == self.hyperparams.batch_size:
+    if self.count % self.hyperparams.batch_size == 0:
       self.update()
     if self.count % self.hyperparams.report_every == 0:
       self.evaluate()
@@ -197,24 +183,25 @@ class Trainer:
 
   # Performs a gradient update.
   def update(self):
-    if self.current_batch_size > 0:
-      for k,v in self.losses.iteritems():
-        print "Loss for", k, "=", v
+    if self.count > self.last_update_count:
+      self.last_update_count = self.count
+      print self.batch_losses.tostring(self.count)
       start = time.time()
-      self.batch_loss /= self.current_batch_num_transitions
 
-      # Add the regularization penalty to the batch loss.
+      objective = self.batch_losses.average()
+
+      # Add the regularization penalty to the objective.
       l2 = Var(torch.Tensor([0.0]))
       if self.hyperparams.l2_coeff > 0.0:
         for p in self.model.regularized_params:
           l2 += 0.5 * self.hyperparams.l2_coeff * torch.sum(p * p)
-        self.batch_loss += l2
+        objective += l2
 
-      self.batch_loss /= 3.0  # for parity with TF
-      value = self.batch_loss.data[0]
+      objective /= 3.0  # for parity with TF
+      value = objective.data[0]
 
       # Compute gradients.
-      self.batch_loss.backward()
+      objective.backward()
 
       # Clip them.
       self.clip_gradients()
