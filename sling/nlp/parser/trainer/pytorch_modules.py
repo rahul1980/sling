@@ -25,6 +25,7 @@ from cascade import Delegate
 from parser_state import ParserState
 
 from sling.myelin.lexical_encoder import LexicalEncoder
+import sling
 import sling.myelin.nn as flownn
 import sling.myelin.flow as flow
 import sling.myelin.builder as builder
@@ -653,14 +654,16 @@ class Sempar(nn.Module):
 
     cascade = spec.cascade
     cascade_blob = fl.blob("cascade")
-    cascade_blob.add_attr("num_delegates", cascade.size())
+    store = sling.Store(spec.commons)
+    cascade_frame = cascade.as_frame(store)
+    cascade_blob.data = cascade_frame.data(binary=True)
+    print cascade_frame.data(pretty=True)
 
     # Specify one cell per FF head (= delegate).
     ff_trunk_width = flow_ff.hidden_out.shape[1]
     for i, head in enumerate(self.ff_heads):
       delegate = spec.cascade.delegates[i]
-      cascade_blob.add_attr("delegate" + str(i), delegate.__class__.__name__)
-      assert delegate.type == Delegate.SOFTMAX
+      assert delegate.type == Delegate.SOFTMAX, delegate.type
       d = builder.Builder(fl, "delegate" + str(i))
       head_input = link(d, "input", ff_trunk_width, ff_cnx)
 

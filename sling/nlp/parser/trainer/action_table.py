@@ -150,20 +150,9 @@ class Actions:
     table["/table/max_elaborate_source"] = self.max_elaborate_source
     table["/table/frame_limit"] = self.frame_limit
 
-    def fill(f, name, val):
-      if val is not None:
-        f["/table/action/" + name] = val
-
     actions_array = store.array(self.size())
     for index, action in enumerate(self.table):
-      frame = store.frame({})
-      fill(frame, "type", action.type)
-      fill(frame, "length", action.length)
-      fill(frame, "source", action.source)
-      fill(frame, "target", action.target)
-      fill(frame, "label", action.label)
-      fill(frame, "role", action.role)
-      actions_array[index] = frame
+      actions_array[index] = action.as_frame(store)
     table["/table/actions"] = actions_array
 
     symbols = map(

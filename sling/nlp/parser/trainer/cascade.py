@@ -66,6 +66,9 @@ class Delegate(object):
   def predict(self, state, previous_action, ff_hidden):
     pass
 
+  def as_frame(self, frame):
+    pass
+
 
 """Delegate that uses a softmax layer to decide what action to output."""
 class SoftmaxDelegate(Delegate):
@@ -82,7 +85,7 @@ class SoftmaxDelegate(Delegate):
     pass
 
   """Returns the action corresponding to 'index' in the softmax layer."""
-  def action(index, previous_action):
+  def action(index, previous_action=None):
     pass
 
   def loss(self, state, ff_hidden, gold):
@@ -93,6 +96,13 @@ class SoftmaxDelegate(Delegate):
   def predict(self, state, previous_action, ff_hidden):
     best_index = self.model(ff_hidden, train=False)
     return self.action(best_index, previous_action)
+
+  def as_frame(self, frame):
+    actions = frame.store().array(self.size())
+    for i in xrange(self.size()):
+      action = self.action(i, previous_action=None)
+      actions[i] = action.as_frame(frame.store())
+    frame["actions"] = actions
 
 
 class FlatDelegate(SoftmaxDelegate):
@@ -259,7 +269,8 @@ class EvokeTypeDelegate(SoftmaxDelegate):
   def action(self, index, previous_action):
     action = Action(Action.EVOKE)
     action.label = self.index_to_types[index]
-    action.length = previous_action.length
+    if previous_action is not None:
+      action.length = previous_action.length
     return action
 
 
@@ -330,6 +341,16 @@ class Cascade(object):
       else:
         s += " (ranking)"
     return s
+
+  def as_frame(self, store):
+    frame = store.frame({"name": self.__class__.__name__})
+    delegates = store.array(self.size())
+    for index, delegate in enumerate(self.delegates):
+      d = store.frame({"name": delegate.__class__.__name__, "index": index})
+      delegate.as_frame(d)
+      delegates[index] = d
+    frame["delegates"] = delegates
+    return frame
 
 
 class FlatCascade(Cascade):

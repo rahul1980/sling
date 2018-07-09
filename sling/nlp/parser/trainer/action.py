@@ -78,6 +78,13 @@ class Action:
         s = s + k + ": " + str(v)
     return s
 
+  def as_frame(self, store, slot_prefix="/table/action/"):
+    frame = store.frame({})
+    for s in self.__dict__.keys():
+      val = getattr(self, s)
+      if val is not None:
+        frame[slot_prefix + s] = val
+    return frame
 
   # Returns whether the action is a cascade.
   def is_cascade(self):
