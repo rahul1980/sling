@@ -580,20 +580,16 @@ class Sempar(nn.Module):
       axis = bldr.const(1, "int32")
       op.add_input(axis)
 
-    # Specify the FF unit.
-    ff = builder.Builder(fl, "ff")
+    # Specify the FF trunk = FF feature vector + hidden layer computation.
+    ff = builder.Builder(fl, "ff_trunk")
     ff_input = ff.var(name="input", shape=[1, spec.ff_input_dim])
     flow_ff = flownn.FF(
         ff, \
         input=ff_input, \
         layers=[spec.ff_hidden_dim],
-        output_layers=[d.size() for d in self.spec.cascade.delegates], \
         hidden=0)
     flow_ff.set_layer_data(0, self.ff_layer.weight.data.numpy(), \
                            self.ff_layer.bias.data.numpy())
-    for i, head in enumerate(self.ff_heads):
-      flow_ff.set_output_layer_data(i, head.softmax.weight.data.numpy(), \
-          head.softmax.bias.data.numpy())
 
     ff_concat_op = ff.rawop(optype="ConcatV2", name="concat")
     ff_concat_op.add_output(ff_input)
@@ -654,5 +650,37 @@ class Sempar(nn.Module):
       ff_concat_op.add_input(output)
 
     finish_concat_op(ff, ff_concat_op)
+
+    cascade = spec.cascade
+    cascade_blob = fl.blob("cascade")
+    cascade_blob.add_attr("num_delegates", cascade.size())
+
+    # Specify one cell per FF head (= delegate).
+    ff_trunk_width = flow_ff.hidden_out.shape[1]
+    for i, head in enumerate(self.ff_heads):
+      delegate = spec.cascade.delegates[i]
+      cascade_blob.add_attr("delegate" + str(i), delegate.__class__.__name__)
+      assert delegate.type == Delegate.SOFTMAX
+      d = builder.Builder(fl, "delegate" + str(i))
+      head_input = link(d, "input", ff_trunk_width, ff_cnx)
+
+      W = d.var("W", shape=[ff_trunk_width, delegate.size()])
+      W.data = head.softmax.weight.data.numpy()
+      output = d.matmul(head_input, W)
+      output.type = W.type
+      output.shape = [1, delegate.size()]
+
+      b = d.var("b", shape=[1, delegate.size()])
+      b.data = head.softmax.bias.data.numpy()
+      output = d.add(output, b)
+      output.type = b.type
+      output.shape = [1, delegate.size()]
+
+      output = d.identity(output, name="output")
+      output.type = b.type
+      output.shape = [1, delegate.size()]
+      output.ref = True
+      output.producer.add_attr("output", 1)
+
     fl.save(flow_file)
 
