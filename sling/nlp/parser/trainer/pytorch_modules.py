@@ -22,6 +22,7 @@ import torch.nn as nn
 
 sys.path.insert(0, "sling/nlp/parser/trainer")
 from cascade import Delegate
+from cascade import SoftmaxDelegate
 from parser_state import ParserState
 
 from sling.myelin.lexical_encoder import LexicalEncoder
@@ -246,6 +247,11 @@ class Losses:
     return s
 
 
+# Asserts 'delegate' to be a softmax delegate.
+def assert_softmax_delegate(delegate):
+  assert isinstance(delegate, SoftmaxDelegate), delegate.__class__.__name__
+
+
 # Top-level module for SEMPAR.
 class Sempar(nn.Module):
   def __init__(self, spec):
@@ -284,7 +290,7 @@ class Sempar(nn.Module):
     cascade = self.spec.cascade
     self.ff_heads = []
     for index, delegate in enumerate(cascade.delegates):
-      assert delegate.type == Delegate.SOFTMAX
+      assert_softmax_delegate(delegate)
       head = SoftmaxHead(h, delegate.size())
       self.ff_heads.append(head)
       self.add_module("ff_softmax_" + str(index), head.softmax)
@@ -655,15 +661,13 @@ class Sempar(nn.Module):
     cascade = spec.cascade
     cascade_blob = fl.blob("cascade")
     store = sling.Store(spec.commons)
-    cascade_frame = cascade.as_frame(store)
-    cascade_blob.data = cascade_frame.data(binary=True)
-    print cascade_frame.data(pretty=True)
+    cascade_blob.data = cascade.as_frame(store).data(binary=True)
 
     # Specify one cell per FF head (= delegate).
     ff_trunk_width = flow_ff.hidden_out.shape[1]
     for i, head in enumerate(self.ff_heads):
       delegate = spec.cascade.delegates[i]
-      assert delegate.type == Delegate.SOFTMAX, delegate.type
+      assert_softmax_delegate(delegate)
       d = builder.Builder(fl, "delegate" + str(i))
       head_input = link(d, "input", ff_trunk_width, ff_cnx)
 
