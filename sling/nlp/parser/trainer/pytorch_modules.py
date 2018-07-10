@@ -208,20 +208,24 @@ class SoftmaxLoss:
     return self.fn(logits, gold_var)
 
 
+# Keeps track of per-delegate per-transition losses.
 class Losses:
   def __init__(self):
-    self.losses = {}
+    self.losses = {}  # delegate -> (loss, num transitions)
 
+  # Adds specified delegate loss.
   def add(self, delegate_index, step_loss, count=1):
     if delegate_index not in self.losses:
       self.losses[delegate_index] = [Var(torch.Tensor([0.0])), 0]
     self.losses[delegate_index][0] += step_loss
     self.losses[delegate_index][1] += count
     
+  # Adds losses in 'other' to itself.
   def aggregate(self, other):
     for delegate, value in other.losses.iteritems():
       self.add(delegate, value[0], value[1])
 
+  # Returns (total loss, total number of transitions).
   def total(self):
     loss = 0
     count = 0
@@ -230,10 +234,12 @@ class Losses:
       count += v[1]
     return (loss, count)
 
+  # Returns average per-transition loss across all delegates.
   def average(self):
     (loss, count) = self.total()
     return loss / count
 
+  # Prints all losses.
   def tostring(self, after=None):
     s = ""
     for k in sorted(self.losses.keys()):
@@ -473,9 +479,6 @@ class Sempar(nn.Module):
 
       # Translate the gold actions into their cascade equivalents.
       cascade_gold = cascade.translate(document.gold)
-      #for g in document.gold:
-      #  print "True gold", g
-      #print  "VVV"
       gold_index = 0
       while not state.done:
         # Compute the hidden layer once for all cascade delegates.
@@ -487,8 +490,6 @@ class Sempar(nn.Module):
           gold = cascade_gold[gold_index]
           step_loss = cascade.loss(delegate_index, state, ff_hidden, gold)
           losses.add(delegate_index, step_loss)
-          #print "Training, delegate", delegate_index, "gold", gold, "loss", fstr(step_loss)
-          #if gold.is_stop(): print
 
           # If the gold action was a CASCADE, move to the next delegate.
           if gold.is_cascade():
@@ -519,36 +520,24 @@ class Sempar(nn.Module):
           # Get the highest scoring action from the cascade delegate.
           # Note: We don't have to do any filtering or checking here, we
           # can just return the top-scoring action.
-          #
-          # Also note that we supply the delegate with the latest action
-          # in the cascade. This way, it can directly output an action
-          # that can be applied to the parser state.
-          # e.g. if the previous action in the cascade decided on the length
-          # of an evoke, and this delegate decided on the type, then this
-          # delegate can directly output EVOKE(length, type).
           best = cascade.predict(delegate_index, state, last, ff_hidden)
 
           if best.is_cascade():
-            #print "Delegate", delegate_index, "->", best
-            # Move to the next delegate in the cascade.
             delegate_index = cascade.next(best, delegate_index)
             last = best
           else:
-            # We have an action that can be applied to the parser state.
-            # See if it is not allowed, then we default to SHIFT or STOP.
+            # If the action isn't allowed or can't be applied to the parser state,
+            # then default to SHIFT or STOP.
             index = actions.index(best)
-            #print "Delegate", delegate_index, "->", best, " (", index , ")"
             total_counts[delegate_index] += 1
             if actions.disallowed[index] or not state.is_allowed(index):
               disallowed_counts[delegate_index] += 1
               best = shift
               if state.current == state.end: best = stop
-              #print "           Corrected to", best
 
             # Apply the action and stop the cascade.
             state.advance(best)
             cascading = False
-          #if best.is_stop(): print "\n"
 
       return state, disallowed_counts, total_counts
 

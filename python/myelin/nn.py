@@ -17,12 +17,11 @@
 
 class FF:
   def __init__(
-      self, tf, input, layers, hidden=None, bias=True, activation="Relu",
-      activation_on_last_layer=False):
+      self, tf, input, layers, hidden=None, bias=True, activation="Relu"):
     self.weights = []
     self.biases = []
     self.hidden_out = None
-    self.outputs = []
+    self.output = None
 
     v = input
     for l in range(len(layers)):

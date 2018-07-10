@@ -78,6 +78,7 @@ class Action:
         s = s + k + ": " + str(v)
     return s
 
+  # Returns frame representation of the action.
   def as_frame(self, store, slot_prefix="/table/action/"):
     frame = store.frame({})
     for s in self.__dict__.keys():
