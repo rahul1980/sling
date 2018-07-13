@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "sling/base/logging.h"
+#include "sling/base/registry.h"
 #include "sling/base/types.h"
 #include "sling/file/file.h"
 #include "sling/frame/store.h"
@@ -35,7 +36,96 @@
 namespace sling {
 namespace nlp {
 
+class Cascade;
+class CascadeInstance;
 class ParserInstance;
+
+// Delegate implementation.
+class Delegate : public Component<Delegate> {
+ public:
+  virtual ~Delegate() {}
+
+  // Initializes the delegate, which is a part of 'cascade', and whose
+  // implementation is in 'cell' and specification is in 'spec'. 
+  virtual void Initialize(
+    const Cascade *cascade, const myelin::Cell *cell, const Frame &spec) = 0;
+
+  // Modifies 'action' with the result of the already computed 'instance'.
+  virtual void Compute(
+    myelin::Instance *instance, ParserAction *action) const = 0;
+
+  // Returns the location of the delegate input.
+  virtual myelin::Tensor *input() const { return input_; }
+
+  // Cell accessors.
+  myelin::Cell *cell() const { return cell_; }
+  void set_cell(myelin::Cell *cell) { cell_ = cell; }
+
+  // Other accessors.
+  const string &name() const { return name_; }
+  const string &runtime() const { return runtime_; }
+  void set_name(const string &n) { name_ = n; }
+  void set_runtime(const string &r) { runtime_ = r; }
+
+ protected:
+  // Input to the delegate.
+  myelin::Tensor *input_ = nullptr;
+
+  // Delegate cell.
+  myelin::Cell *cell_ = nullptr;
+
+  // Name and runtime.
+  string name_;
+  string runtime_;
+};
+
+#define REGISTER_DELEGATE_RUNTIME(type, component) \
+    REGISTER_COMPONENT_TYPE(sling::nlp::Delegate, type, component)
+
+// Cascade model.
+class Cascade {
+ public:
+  ~Cascade();
+
+  // Initializes the cascade by reading its specification from 'spec'
+  // and implementation from 'network'.
+  void Initialize(const myelin::Network &network, const Frame &spec);
+
+  // Returns a new cascade instance for carrying out computation.
+  CascadeInstance *CreateInstance() const;
+
+  // Delegate accessors.
+  Delegate *delegate(int i) const { return delegates_[i]; }
+  int size() const { return delegates_.size(); }
+
+ private:
+  friend class CascadeInstance;
+
+  // List of delegates.
+  std::vector<Delegate *> delegates_;
+};
+
+// Runs an instance of a cascade on a document.
+class CascadeInstance {
+ public:
+  CascadeInstance(const Cascade *cascade);
+  ~CascadeInstance();
+
+  // Outputs in 'output' the result of running the whole cascade on 'state'.
+  // The activation at index 'step' is used as input to all the delegates.
+  void Compute(myelin::Channel *activations,
+               int step,
+               ParserState *state,
+               ParserAction *output);
+
+ private:
+  const Cascade *const cascade_ = nullptr;     // cascade; not owned
+  std::vector<myelin::Instance *> instances_;  // delegate-specific instances
+
+  // Fallback actions.
+  ParserAction shift_;
+  ParserAction stop_;
+};
 
 // Frame semantics parser model.
 class Parser {
@@ -52,9 +142,6 @@ class Parser {
     network_.options().global_profiler = true;
   }
 
-  // Enable fast fallback. Must be called before Load().
-  void EnableFastFallback() { fast_fallback_ = true; }
-
   // Run parser on GPU if available. Must be called before Load().
   void EnableGPU();
 
@@ -65,7 +152,7 @@ class Parser {
   const LexicalEncoder &encoder() const { return encoder_; }
 
  private:
-  // Feed-forward cell.
+  // Feed-forward trunk cell.
   struct FF {
     myelin::Cell *cell;                       // feed-forward cell
 
@@ -99,10 +186,9 @@ class Parser {
     myelin::Tensor *steps;                    // link to FF step hidden layer
     myelin::Tensor *hidden;                   // link to FF hidden layer output
     myelin::Tensor *output;                   // link to FF logit layer output
-    myelin::Tensor *prediction;               // link to FF argmax
   };
 
-  // Initialize FF cell.
+  // Initialize FF trunk cell.
   void InitFF(const string &name, FF *ff);
 
   // Lookup cells and parameters.
@@ -119,8 +205,8 @@ class Parser {
   // Feed-forward cell.
   FF ff_;
 
-  // Number of output actions.
-  int num_actions_;
+  // Cascade.
+  Cascade cascade_;
 
   // Global store for parser.
   Store *store_ = nullptr;
@@ -133,9 +219,6 @@ class Parser {
 
   // Set of roles considered.
   RoleSet roles_;
-
-  // Fast fallback using argmax.
-  bool fast_fallback_ = false;
 
   // Run parser on GPU.
   bool use_gpu_ = false;
@@ -153,6 +236,8 @@ class Parser {
 class ParserInstance {
  public:
   ParserInstance(const Parser *parser, Document *document, int begin, int end);
+
+  ~ParserInstance() { delete cascade_; }
 
   // Attach channel for FF.
   void AttachFF(int output, const myelin::BiChannel &bilstm);
@@ -175,11 +260,14 @@ class ParserInstance {
   // Parser transition state.
   ParserState state_;
 
-  // Instance for network computations.
+  // Instance for feed-forward trunk computations.
   myelin::Instance ff_;
 
   // Channels.
   myelin::Channel ff_step_;
+
+  // Instance for cascade computations.
+  CascadeInstance *cascade_ = nullptr;
 
   // Frame creation and focus steps.
   std::vector<int> create_step_;

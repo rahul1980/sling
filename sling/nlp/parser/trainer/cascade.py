@@ -68,15 +68,15 @@ class Delegate(object):
   def translate(self, action, output):
     pass
 
-  """Computes the delegate loss, where 'ff_hidden' is the output of the FF unit's
-  hidden layer, and 'gold' is the gold transition for the delegate."""
-  def loss(self, state, ff_hidden, gold):
+  """Computes the delegate loss, where 'ff_activation' is the FF unit's
+  activation, and 'gold' is the gold transition for the delegate."""
+  def loss(self, state, ff_activation, gold):
     pass
 
   """Predicts and returns the delegate's output action based on the input
   FF unit's hidden layer, and the output action (if any) of the previous
   delegate."""
-  def predict(self, state, previous_action, ff_hidden):
+  def predict(self, state, previous_action, ff_activation):
     pass
 
   """Saves the delegate specification in the SLING frame 'frame'. This will
@@ -103,22 +103,25 @@ class SoftmaxDelegate(Delegate):
   def action(index, previous_action=None):
     pass
 
-  """Computes the delegate loss, where 'ff_hidden' is the output of the FF unit's
-  hidden layer, and 'gold' is the gold transition for the delegate."""
-  def loss(self, state, ff_hidden, gold):
-    logits = self.model(ff_hidden, train=True)
+  """Computes the delegate loss, where 'ff_activation' is the FF unit's
+  activation, and 'gold' is the gold transition for the delegate."""
+  def loss(self, state, ff_activation, gold):
+    logits = self.model(ff_activation, train=True)
     gold_index = self.index(gold)
     return self.lossfn(logits, gold_index)
 
   """Predicts and returns the delegate's output action based on the input
   FF unit's hidden layer, and the output action (if any) of the previous
   delegate."""
-  def predict(self, state, previous_action, ff_hidden):
-    best_index = self.model(ff_hidden, train=False)
+  def predict(self, state, previous_action, ff_activation):
+    best_index = self.model(ff_activation, train=False)
     return self.action(best_index, previous_action)
 
   """Saves the delegate specification in the SLING frame 'frame'."""
   def as_frame(self, frame):
+    """Specify the runtime implementation of this delegate."""
+    frame["runtime"] = "SoftmaxDelegate"
+
     """Save the action table for this delegate in the frame."""
     actions = frame.store().array(self.size())
     for i in xrange(self.size()):
@@ -350,10 +353,6 @@ class Cascade(object):
   def size(self):
     return len(self.delegates)
 
-  """Returns the next delegate id, assuming 'action' to be a CASCADE."""
-  def next(self, action, delegate_index):
-    return action.delegate
-
   """Translates a sequence of actions into cascade-specific actions."""
   def translate(self, sequence):
     output = []
@@ -365,19 +364,19 @@ class Cascade(object):
 
         """Move to the next delegate if needed, else stop."""
         if output[-1].is_cascade():
-          delegate_index = self.next(output[-1], delegate_index)
+          delegate_index = output[-1].delegate
         else:
           break
     return output
 
   """Returns the loss for the specified delegate."""
-  def loss(self, delegate_index, state, ff_hidden, gold):
-    return self.delegates[delegate_index].loss(state, ff_hidden, gold)
+  def loss(self, delegate_index, state, ff_activation, gold):
+    return self.delegates[delegate_index].loss(state, ff_activation, gold)
 
   """Returns the predicted action for the specified delegate."""
-  def predict(self, delegate_index, state, previous_action, ff_hidden):
+  def predict(self, delegate_index, state, previous_action, ff_activation):
     return self.delegates[delegate_index].predict(
-      state, previous_action, ff_hidden)
+      state, previous_action, ff_activation)
 
   """Returns a string visualization of the cascade."""
   def __repr__(self):
@@ -390,7 +389,7 @@ class Cascade(object):
 
   """Saves the cascade specificaton to a frame in 'store'."""
   def as_frame(self, store):
-    frame = store.frame({"name": self.__class__.__name__})
+    frame = store.frame({"id": "cascade", "name": self.__class__.__name__})
     delegates = store.array(self.size())
     for index, delegate in enumerate(self.delegates):
       d = store.frame({"name": delegate.__class__.__name__, "index": index})

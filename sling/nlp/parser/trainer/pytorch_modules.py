@@ -13,14 +13,14 @@
 # limitations under the License.
 
 
-# PyTorch module implementations for Sempar.
+# PyTorch module implementations for Caspar.
 
 import math
-import sys
+#import sys
 import torch
 import torch.nn as nn
 
-sys.path.insert(0, "sling/nlp/parser/trainer")
+#sys.path.insert(0, "sling/nlp/parser/trainer")
 from cascade import Delegate
 from cascade import SoftmaxDelegate
 from parser_state import ParserState
@@ -190,8 +190,8 @@ class SoftmaxHead:
   def __init__(self, input_size, output_size):
     self.softmax = Projection(input_size, output_size)
 
-  def __call__(self, ff_hidden, train=False):
-    logits = self.softmax(ff_hidden)
+  def __call__(self, ff_activation, train=False):
+    logits = self.softmax(ff_activation)
     if not train:
       best_score, best_index = torch.max(logits, 1)
       return best_index.data[0]
@@ -258,10 +258,10 @@ def assert_softmax_delegate(delegate):
   assert isinstance(delegate, SoftmaxDelegate), delegate.__class__.__name__
 
 
-# Top-level module for SEMPAR.
-class Sempar(nn.Module):
+# Top-level module for CASPAR.
+class Caspar(nn.Module):
   def __init__(self, spec):
-    super(Sempar, self).__init__()
+    super(Caspar, self).__init__()
     self.spec = spec
 
     # LSTM Embeddings.
@@ -305,7 +305,7 @@ class Sempar(nn.Module):
 
     # Only regularize the FF hidden layer weights.
     self.regularized_params = [self.ff_layer.weight]
-    print "Sempar:", self
+    print "Caspar:", self
 
 
   # Initializes various module parameters.
@@ -404,8 +404,8 @@ class Sempar(nn.Module):
     return (lr_out, rl_out, raw_features)
 
 
-  # Returns the FF output, given the LSTM outputs and previous FF activations.
-  def _ff_hidden(
+  # Returns the FF activation, given the LSTM outputs and previous activations.
+  def _ff_activation(
       self, lr_lstm_output, rl_lstm_output, ff_activations, state, debug=False):
     assert len(ff_activations) == state.steps
     ff_input_parts = []
@@ -454,13 +454,13 @@ class Sempar(nn.Module):
         ff_input_parts_debug.append(link_debug)
 
     ff_input = torch.cat(ff_input_parts, 1).view(-1, 1)
-    ff_hidden = self.ff_layer(ff_input)
-    ff_hidden = self.ff_relu(ff_hidden)
+    ff_activation = self.ff_layer(ff_input)
+    ff_activation = self.ff_relu(ff_activation)
 
     # Store the FF activation for future steps.
-    ff_activations.append(ff_hidden)
+    ff_activations.append(ff_activation)
 
-    return ff_hidden, ff_input_parts_debug
+    return ff_activation, ff_input_parts_debug
 
 
   # Makes a forward pass over 'document'.
@@ -482,18 +482,19 @@ class Sempar(nn.Module):
       gold_index = 0
       while not state.done:
         # Compute the hidden layer once for all cascade delegates.
-        ff_hidden, _ = self._ff_hidden(lr_out, rl_out, ff_activations, state)
+        ff_activation, _ = self._ff_activation(
+            lr_out, rl_out, ff_activations, state)
         cascading = True
         delegate_index = 0   # assume we start the cascade at delegate 0
         while cascading:
           # Get the gold action for the delegate and compute loss w.r.t. it.
           gold = cascade_gold[gold_index]
-          step_loss = cascade.loss(delegate_index, state, ff_hidden, gold)
+          step_loss = cascade.loss(delegate_index, state, ff_activation, gold)
           losses.add(delegate_index, step_loss)
 
           # If the gold action was a CASCADE, move to the next delegate.
           if gold.is_cascade():
-            delegate_index = cascade.next(gold, delegate_index)
+            delegate_index = gold.delegate
           else:
             # Not a CASCADE action. Apply it to the state and move on.
             state.advance(gold)
@@ -510,7 +511,8 @@ class Sempar(nn.Module):
       total_counts = [0] * cascade.size()
       while not state.done:
         # Compute the hidden layer once for all cascade delegates.
-        ff_hidden, _ = self._ff_hidden(lr_out, rl_out, ff_activations, state)
+        ff_activation, _ = self._ff_activation(
+            lr_out, rl_out, ff_activations, state)
         cascading = True
         delegate_index = 0
 
@@ -520,13 +522,13 @@ class Sempar(nn.Module):
           # Get the highest scoring action from the cascade delegate.
           # Note: We don't have to do any filtering or checking here, we
           # can just return the top-scoring action.
-          best = cascade.predict(delegate_index, state, last, ff_hidden)
+          best = cascade.predict(delegate_index, state, last, ff_activation)
 
           if best.is_cascade():
-            delegate_index = cascade.next(best, delegate_index)
+            delegate_index = best.delegate
             last = best
           else:
-            # If the action isn't allowed or can't be applied to the parser state,
+            # If the action isn't allowed or can't be applied to the state,
             # then default to SHIFT or STOP.
             index = actions.index(best)
             total_counts[delegate_index] += 1
@@ -658,7 +660,7 @@ class Sempar(nn.Module):
       delegate = spec.cascade.delegates[i]
       assert_softmax_delegate(delegate)
       d = builder.Builder(fl, "delegate" + str(i))
-      head_input = link(d, "input", ff_trunk_width, ff_cnx)
+      head_input = link(d, "input", ff_trunk_width, ff_cnx, False)
 
       W = d.var("W", shape=[ff_trunk_width, delegate.size()])
       W.data = head.softmax.weight.data.numpy()
@@ -668,15 +670,17 @@ class Sempar(nn.Module):
 
       b = d.var("b", shape=[1, delegate.size()])
       b.data = head.softmax.bias.data.numpy()
-      output = d.add(output, b)
-      output.type = b.type
-      output.shape = [1, delegate.size()]
+      logits = d.add(output, b)
+      logits.type = b.type
+      logits.shape = [1, delegate.size()]
 
-      output = d.identity(output, name="output")
-      output.type = b.type
-      output.shape = [1, delegate.size()]
-      output.ref = True
-      output.producer.add_attr("output", 1)
+      best_op = d.rawop(optype="ArgMax")
+      best_op.add_input(logits)
+      best = d.var("output")
+      best.type = builder.DT_INT
+      best.shape = [1]
+      best_op.add_output(best)
+      best.producer.add_attr("output", 1)
 
     fl.save(flow_file)
 

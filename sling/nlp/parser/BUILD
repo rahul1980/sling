@@ -75,5 +75,6 @@ cc_library(
     "//sling/myelin/kernel:tensorflow",
     "//sling/nlp/document",
     "//sling/nlp/document:lexical-encoder",
+    "//sling/string:strcat",
   ],
 )

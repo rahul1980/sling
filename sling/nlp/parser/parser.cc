@@ -24,11 +24,157 @@
 #include "sling/nlp/document/document.h"
 #include "sling/nlp/document/features.h"
 #include "sling/nlp/document/lexicon.h"
+#include "sling/string/strcat.h"
+
+REGISTER_COMPONENT_REGISTRY("delegate runtime", sling::nlp::Delegate);
 
 namespace sling {
 namespace nlp {
 
 static myelin::CUDARuntime cudart;
+
+// Delegate that assumes a softmax output.
+class SoftmaxDelegate : public Delegate {
+ public:
+  void Initialize(const Cascade *cascade,
+                  const myelin::Cell *cell,
+                  const Frame &spec) override {
+    input_ = cell->GetParameter(cell->name() + "/input");
+    output_ = cell->GetParameter(cell->name() + "/output");
+
+    // Read delegate's action table.
+    Store *store = spec.store();
+    Array actions(store, spec.GetHandle("actions"));
+    CHECK(actions.valid()) << name();
+    for (int i = 0; i < actions.length(); ++i) {
+      ParserAction action;
+      Frame frame(store, actions.get(i));
+      action.type =
+        static_cast<ParserAction::Type>(frame.GetInt("/table/action/type"));
+      if (frame.Has("/table/action/delegate")) {
+        action.delegate = frame.GetInt("/table/action/delegate");
+      }
+      if (frame.Has("/table/action/length")) {
+        action.length = frame.GetInt("/table/action/length");
+      }
+      if (frame.Has("/table/action/source")) {
+        action.source = frame.GetInt("/table/action/source");
+      }
+      if (frame.Has("/table/action/target")) {
+        action.target = frame.GetInt("/table/action/target");
+      }
+      if (frame.Has("/table/action/label")) {
+        action.label = frame.GetHandle("/table/action/label");
+      }
+      if (frame.Has("/table/action/role")) {
+        action.role = frame.GetHandle("/table/action/role");
+      }
+      actions_.push_back(action);
+    }
+    LOG(INFO) << name() << " has " << actions_.size() << " actions";
+  }
+
+  void Compute(
+    myelin::Instance *instance, ParserAction *action) const override {
+    int best_index = *instance->Get<int>(output_);
+
+    // NOTE: A more general and slightly more expensive approach would be
+    // to call another virtual method here:
+    //   Overlay(actions_[best_index], action);
+    // Right now we overwrite the under-construction action with the output.
+    *action = actions_[best_index];
+  }
+
+ private:
+  // Location of the delegate output (argmax of the softmax layer).
+  myelin::Tensor *output_ = nullptr;
+
+  // Action table for the delegate.
+  std::vector<ParserAction> actions_;
+};
+
+REGISTER_DELEGATE_RUNTIME("SoftmaxDelegate", SoftmaxDelegate);
+
+Cascade::~Cascade() {
+  for (auto *d : delegates_) delete d;
+}
+
+void Cascade::Initialize(const myelin::Network &network, const Frame &spec) {
+  Store *store = spec.store();
+  Array delegates(store, spec.GetHandle("delegates"));
+  CHECK(delegates.valid());
+
+  // Create delegates.
+  std::vector<Frame> delegate_specs;
+  for (int i = 0; i < delegates.length(); ++i) {
+    Frame frame(store, delegates.get(i));
+    string runtime = frame.GetText("runtime").str();
+
+    Delegate *d = Delegate::Create(runtime);
+    d->set_cell(network.GetCell(StrCat("delegate", i)));
+    d->set_name(frame.GetText("name").str());
+    d->set_runtime(runtime);
+
+    delegates_.push_back(d);
+    delegate_specs.push_back(frame);
+  }
+
+  // Initialize delegates. Delegates can choose to access other delegates in
+  // the cascade at this point.
+  int i = 0;
+  for (auto *d : delegates_) {
+    d->Initialize(this, d->cell(), delegate_specs[i++]);
+  }
+}
+
+CascadeInstance *Cascade::CreateInstance() const {
+  return new CascadeInstance(this);
+}
+
+CascadeInstance::CascadeInstance(const Cascade *cascade)
+    : cascade_(cascade),
+      shift_(ParserAction::SHIFT),
+      stop_(ParserAction::STOP) {
+  for (auto *d : cascade->delegates_) {
+    instances_.push_back(new myelin::Instance(d->cell()));  
+  }
+}
+
+CascadeInstance::~CascadeInstance() {
+  for (auto *i : instances_) delete i;
+}
+
+void CascadeInstance::Compute(myelin::Channel *activations,
+                              int step,
+                              ParserState *state,
+                              ParserAction *output) {
+  int current = 0;
+  while (true) {
+    // Execute the current delegate.
+    Delegate *delegate = cascade_->delegates_[current];
+    myelin::Instance *instance = instances_[current];
+    instance->Clear();
+    instance->Set(delegate->input(), activations, step);
+    instance->Compute();
+    delegate->Compute(instance, output);
+
+    // If there is a cascade down the chain then follow it.
+    // To avoid potential infinite loops, cascades to delegates
+    // up in the chain are disallowed.
+    bool is_cascade = output->type == ParserAction::CASCADE;
+    if (is_cascade && (output->delegate > current)) {
+      current = output->delegate;
+      continue;
+    }
+
+    // If we have an applicable action then we are done with the cascade.
+    if (!is_cascade && state->CanApply(*output)) return;
+
+    // Return a fallback action.
+    *output = (state->current() < state->end()) ? shift_ : stop_;
+    return;
+  }
+}
 
 void Parser::EnableGPU() {
   if (myelin::CUDA::Supported()) {
@@ -39,7 +185,6 @@ void Parser::EnableGPU() {
 
     // Always use fast fallback when running on GPU.
     use_gpu_ = true;
-    fast_fallback_ = true;
   }
 }
 
@@ -53,14 +198,6 @@ void Parser::Load(Store *store, const string &model) {
   myelin::Flow flow;
   CHECK(flow.Load(model));
 
-  // Add argmax for fast fallback.
-  if (fast_fallback_) {
-    auto *ff = flow.Func("ff");
-    auto *output = flow.Var("ff/output");
-    auto *prediction = flow.AddVariable("ff/prediction", myelin::DT_INT32, {1});
-    flow.AddOperation(ff, "ff/ArgMax", "ArgMax", {output}, {prediction});
-  }
-
   // Analyze parser flow file.
   flow.Analyze(library_);
 
@@ -72,8 +209,8 @@ void Parser::Load(Store *store, const string &model) {
   encoder_.Initialize(network_);
   encoder_.LoadLexicon(&flow);
 
-  // Initialize feed-forward cell.
-  InitFF("ff", &ff_);
+  // Initialize feed-forward trunk.
+  InitFF("ff_trunk", &ff_);
 
   // Load commons and action stores.
   myelin::Flow::Blob *commons = flow.DataBlock("commons");
@@ -87,11 +224,20 @@ void Parser::Load(Store *store, const string &model) {
     decoder.DecodeAll();
   }
 
+  // Read the cascade specification and implementation from the flow.
+  myelin::Flow::Blob *cascade = flow.DataBlock("cascade");
+  CHECK(cascade != nullptr);
+  {
+    StringDecoder decoder(store, cascade->data, cascade->size);
+    decoder.DecodeAll();
+    Frame spec(store, "cascade");
+    CHECK(spec.valid());
+    cascade_.Initialize(network_, spec);
+  }
+
   // Initialize action table.
   store_ = store;
   actions_.Init(store);
-  num_actions_ = actions_.NumActions();
-  CHECK_GT(num_actions_, 0);
   frame_limit_ = actions_.frame_limit();
   roles_.Init(actions_);
 }
@@ -152,8 +298,6 @@ void Parser::InitFF(const string &name, FF *ff) {
   ff->steps = GetParam(name + "/steps");
 
   ff->hidden = GetParam(name + "/hidden");
-  ff->output = GetParam(name + "/output");
-  ff->prediction = GetParam(name + "/prediction", true);
 }
 
 void Parser::Parse(Document *document) const {
@@ -182,38 +326,12 @@ void Parser::Parse(Document *document) const {
       // Extract features.
       data.ExtractFeaturesFF(step);
 
-      // Predict next action.
+      // Compute FF hidden layer.
       data.ff_.Compute();
-      int prediction = 0;
-      if (fast_fallback_) {
-        // Get highest scoring action.
-        prediction = *data.ff_.Get<int>(ff_.prediction);
-        const ParserAction &action = actions_.Action(prediction);
-        if (!state.CanApply(action) || actions_.Beyond(prediction)) {
-          // Fall back to SHIFT or STOP action.
-          if (state.current() == state.end()) {
-            prediction = actions_.StopIndex();
-          } else {
-            prediction = actions_.ShiftIndex();
-          }
-        }
-      } else {
-        // Get highest scoring allowed action.
-        float *output = data.ff_.Get<float>(ff_.output);
-        float max_score = -INFINITY;
-        for (int a = 0; a < num_actions_; ++a) {
-          if (output[a] > max_score) {
-            const ParserAction &action = actions_.Action(a);
-            if (state.CanApply(action) && !actions_.Beyond(a)) {
-              prediction = a;
-              max_score = output[a];
-            }
-          }
-        }
-      }
 
-      // Apply action to parser state.
-      const ParserAction &action = actions_.Action(prediction);
+      // Apply the cascade.
+      ParserAction action;
+      data.cascade_->Compute(&data.ff_step_, step, &state, &action);
       state.Apply(action);
 
       // Update state.
@@ -224,6 +342,10 @@ void Parser::Parse(Document *document) const {
 
         case ParserAction::STOP:
           done = true;
+          break;
+
+        case ParserAction::CASCADE:
+          LOG(FATAL) << "CASCADE action should not reach ParserState.";
           break;
 
         case ParserAction::EVOKE:
@@ -281,6 +403,9 @@ ParserInstance::ParserInstance(const Parser *parser, Document *document,
   // Reserve two transitions per token.
   int length = end - begin;
   ff_step_.reserve(length * 2);
+
+  // Setup cascade instance.
+  cascade_ = parser->cascade_.CreateInstance();
 }
 
 void ParserInstance::AttachFF(int output, const myelin::BiChannel &bilstm) {
