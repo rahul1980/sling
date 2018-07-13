@@ -98,11 +98,17 @@ class Cascade {
   Delegate *delegate(int i) const { return delegates_[i]; }
   int size() const { return delegates_.size(); }
 
+  // Sets action table.
+  void set_actions(const ActionTable *t) { actions_ = t; }
+
  private:
   friend class CascadeInstance;
 
   // List of delegates.
   std::vector<Delegate *> delegates_;
+
+  // Action table.
+  const ActionTable *actions_ = nullptr;
 };
 
 // Runs an instance of a cascade on a document.

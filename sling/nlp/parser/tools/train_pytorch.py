@@ -260,11 +260,11 @@ class Trainer:
           if self.last_eval_count == 0:
             f = open(self.output_file_prefix + ".evals", "w")
             f.close()
-          else:
-            f = open(self.output_file_prefix + ".evals", "a")
-            f.write("Slot_F1 after " + str(self.count) + " examples " +
-                    str(eval_metric) + "\n")
-            f.close()
+
+          f = open(self.output_file_prefix + ".evals", "a")
+          f.write("Slot_F1 after " + str(self.count) + " examples " +
+                  str(eval_metric) + "\n")
+          f.close()
 
           if self.best_metric is None or self.best_metric < eval_metric:
             self.best_metric = eval_metric

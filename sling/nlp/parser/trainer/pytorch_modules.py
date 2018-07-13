@@ -510,7 +510,7 @@ class Caspar(nn.Module):
       disallowed_counts = [0] * cascade.size()
       total_counts = [0] * cascade.size()
       while not state.done:
-        # Compute the hidden layer once for all cascade delegates.
+        # Compute the FF activation once for all cascade delegates.
         ff_activation, _ = self._ff_activation(
             lr_out, rl_out, ff_activations, state)
         cascading = True

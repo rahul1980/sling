@@ -149,6 +149,7 @@ void CascadeInstance::Compute(myelin::Channel *activations,
                               ParserState *state,
                               ParserAction *output) {
   int current = 0;
+  const ActionTable *actions = cascade_->actions_;
   while (true) {
     // Execute the current delegate.
     Delegate *delegate = cascade_->delegates_[current];
@@ -168,7 +169,11 @@ void CascadeInstance::Compute(myelin::Channel *activations,
     }
 
     // If we have an applicable action then we are done with the cascade.
-    if (!is_cascade && state->CanApply(*output)) return;
+    if (!is_cascade &&
+        !actions->Beyond(actions->Index(*output)) &&
+        state->CanApply(*output)) {
+      return;
+    }
 
     // Return a fallback action.
     *output = (state->current() < state->end()) ? shift_ : stop_;
@@ -238,6 +243,7 @@ void Parser::Load(Store *store, const string &model) {
   // Initialize action table.
   store_ = store;
   actions_.Init(store);
+  cascade_.set_actions(&actions_);
   frame_limit_ = actions_.frame_limit();
   roles_.Init(actions_);
 }
