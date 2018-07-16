@@ -649,17 +649,19 @@ class Caspar(nn.Module):
 
     finish_concat_op(ff, ff_concat_op)
 
+    delegate_cell_prefix = "delegate"
     cascade = spec.cascade
     cascade_blob = fl.blob("cascade")
     store = sling.Store(spec.commons)
-    cascade_blob.data = cascade.as_frame(store).data(binary=True)
+    cascade_blob.data = cascade.as_frame(
+        store, delegate_cell_prefix).data(binary=True)
 
     # Specify one cell per FF head (= delegate).
     ff_trunk_width = flow_ff.hidden_out.shape[1]
     for i, head in enumerate(self.ff_heads):
       delegate = spec.cascade.delegates[i]
       assert_softmax_delegate(delegate)
-      d = builder.Builder(fl, "delegate" + str(i))
+      d = builder.Builder(fl, delegate_cell_prefix + str(i))
       head_input = link(d, "input", ff_trunk_width, ff_cnx, False)
 
       W = d.var("W", shape=[ff_trunk_width, delegate.size()])

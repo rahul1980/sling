@@ -24,162 +24,11 @@
 #include "sling/nlp/document/document.h"
 #include "sling/nlp/document/features.h"
 #include "sling/nlp/document/lexicon.h"
-#include "sling/string/strcat.h"
-
-REGISTER_COMPONENT_REGISTRY("delegate runtime", sling::nlp::Delegate);
 
 namespace sling {
 namespace nlp {
 
 static myelin::CUDARuntime cudart;
-
-// Delegate that assumes a softmax output.
-class SoftmaxDelegate : public Delegate {
- public:
-  void Initialize(const Cascade *cascade,
-                  const myelin::Cell *cell,
-                  const Frame &spec) override {
-    input_ = cell->GetParameter(cell->name() + "/input");
-    output_ = cell->GetParameter(cell->name() + "/output");
-
-    // Read delegate's action table.
-    Store *store = spec.store();
-    Array actions(store, spec.GetHandle("actions"));
-    CHECK(actions.valid()) << name();
-    for (int i = 0; i < actions.length(); ++i) {
-      ParserAction action;
-      Frame frame(store, actions.get(i));
-      action.type =
-        static_cast<ParserAction::Type>(frame.GetInt("/table/action/type"));
-      if (frame.Has("/table/action/delegate")) {
-        action.delegate = frame.GetInt("/table/action/delegate");
-      }
-      if (frame.Has("/table/action/length")) {
-        action.length = frame.GetInt("/table/action/length");
-      }
-      if (frame.Has("/table/action/source")) {
-        action.source = frame.GetInt("/table/action/source");
-      }
-      if (frame.Has("/table/action/target")) {
-        action.target = frame.GetInt("/table/action/target");
-      }
-      if (frame.Has("/table/action/label")) {
-        action.label = frame.GetHandle("/table/action/label");
-      }
-      if (frame.Has("/table/action/role")) {
-        action.role = frame.GetHandle("/table/action/role");
-      }
-      actions_.push_back(action);
-    }
-    LOG(INFO) << name() << " has " << actions_.size() << " actions";
-  }
-
-  void Compute(
-    myelin::Instance *instance, ParserAction *action) const override {
-    int best_index = *instance->Get<int>(output_);
-
-    // NOTE: A more general and slightly more expensive approach would be
-    // to call another virtual method here:
-    //   Overlay(actions_[best_index], action);
-    // Right now we overwrite the under-construction action with the output.
-    *action = actions_[best_index];
-  }
-
- private:
-  // Location of the delegate output (argmax of the softmax layer).
-  myelin::Tensor *output_ = nullptr;
-
-  // Action table for the delegate.
-  std::vector<ParserAction> actions_;
-};
-
-REGISTER_DELEGATE_RUNTIME("SoftmaxDelegate", SoftmaxDelegate);
-
-Cascade::~Cascade() {
-  for (auto *d : delegates_) delete d;
-}
-
-void Cascade::Initialize(const myelin::Network &network, const Frame &spec) {
-  Store *store = spec.store();
-  Array delegates(store, spec.GetHandle("delegates"));
-  CHECK(delegates.valid());
-
-  // Create delegates.
-  std::vector<Frame> delegate_specs;
-  for (int i = 0; i < delegates.length(); ++i) {
-    Frame frame(store, delegates.get(i));
-    string runtime = frame.GetText("runtime").str();
-
-    Delegate *d = Delegate::Create(runtime);
-    d->set_cell(network.GetCell(StrCat("delegate", i)));
-    d->set_name(frame.GetText("name").str());
-    d->set_runtime(runtime);
-
-    delegates_.push_back(d);
-    delegate_specs.push_back(frame);
-  }
-
-  // Initialize delegates. Delegates can choose to access other delegates in
-  // the cascade at this point.
-  int i = 0;
-  for (auto *d : delegates_) {
-    d->Initialize(this, d->cell(), delegate_specs[i++]);
-  }
-}
-
-CascadeInstance *Cascade::CreateInstance() const {
-  return new CascadeInstance(this);
-}
-
-CascadeInstance::CascadeInstance(const Cascade *cascade)
-    : cascade_(cascade),
-      shift_(ParserAction::SHIFT),
-      stop_(ParserAction::STOP) {
-  for (auto *d : cascade->delegates_) {
-    instances_.push_back(new myelin::Instance(d->cell()));  
-  }
-}
-
-CascadeInstance::~CascadeInstance() {
-  for (auto *i : instances_) delete i;
-}
-
-void CascadeInstance::Compute(myelin::Channel *activations,
-                              int step,
-                              ParserState *state,
-                              ParserAction *output) {
-  int current = 0;
-  const ActionTable *actions = cascade_->actions_;
-  while (true) {
-    // Execute the current delegate.
-    Delegate *delegate = cascade_->delegates_[current];
-    myelin::Instance *instance = instances_[current];
-    instance->Clear();
-    instance->Set(delegate->input(), activations, step);
-    instance->Compute();
-    delegate->Compute(instance, output);
-
-    // If there is a cascade down the chain then follow it.
-    // To avoid potential infinite loops, cascades to delegates
-    // up in the chain are disallowed.
-    bool is_cascade = output->type == ParserAction::CASCADE;
-    if (is_cascade && (output->delegate > current)) {
-      current = output->delegate;
-      continue;
-    }
-
-    // If we have an applicable action then we are done with the cascade.
-    if (!is_cascade &&
-        !actions->Beyond(actions->Index(*output)) &&
-        state->CanApply(*output)) {
-      return;
-    }
-
-    // Return a fallback action.
-    *output = (state->current() < state->end()) ? shift_ : stop_;
-    return;
-  }
-}
 
 void Parser::EnableGPU() {
   if (myelin::CUDA::Supported()) {
@@ -337,7 +186,7 @@ void Parser::Parse(Document *document) const {
 
       // Apply the cascade.
       ParserAction action;
-      data.cascade_->Compute(&data.ff_step_, step, &state, &action);
+      data.cascade_.Compute(&data.ff_step_, step, &state, &action);
       state.Apply(action);
 
       // Update state.
@@ -405,13 +254,11 @@ ParserInstance::ParserInstance(const Parser *parser, Document *document,
       encoder_(parser->encoder()),
       state_(document->store(), begin, end),
       ff_(parser->ff_.cell),
-      ff_step_(parser->ff_.hidden) {
+      ff_step_(parser->ff_.hidden),
+      cascade_(&parser->cascade_) {
   // Reserve two transitions per token.
   int length = end - begin;
   ff_step_.reserve(length * 2);
-
-  // Setup cascade instance.
-  cascade_ = parser->cascade_.CreateInstance();
 }
 
 void ParserInstance::AttachFF(int output, const myelin::BiChannel &bilstm) {

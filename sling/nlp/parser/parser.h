@@ -30,108 +30,14 @@
 #include "sling/nlp/document/document.h"
 #include "sling/nlp/document/lexical-encoder.h"
 #include "sling/nlp/parser/action-table.h"
+#include "sling/nlp/parser/cascade.h"
 #include "sling/nlp/parser/parser-state.h"
 #include "sling/nlp/parser/roles.h"
 
 namespace sling {
 namespace nlp {
 
-class Cascade;
-class CascadeInstance;
 class ParserInstance;
-
-// Delegate implementation.
-class Delegate : public Component<Delegate> {
- public:
-  virtual ~Delegate() {}
-
-  // Initializes the delegate, which is a part of 'cascade', and whose
-  // implementation is in 'cell' and specification is in 'spec'. 
-  virtual void Initialize(
-    const Cascade *cascade, const myelin::Cell *cell, const Frame &spec) = 0;
-
-  // Modifies 'action' with the result of the already computed 'instance'.
-  virtual void Compute(
-    myelin::Instance *instance, ParserAction *action) const = 0;
-
-  // Returns the location of the delegate input.
-  virtual myelin::Tensor *input() const { return input_; }
-
-  // Cell accessors.
-  myelin::Cell *cell() const { return cell_; }
-  void set_cell(myelin::Cell *cell) { cell_ = cell; }
-
-  // Other accessors.
-  const string &name() const { return name_; }
-  const string &runtime() const { return runtime_; }
-  void set_name(const string &n) { name_ = n; }
-  void set_runtime(const string &r) { runtime_ = r; }
-
- protected:
-  // Input to the delegate.
-  myelin::Tensor *input_ = nullptr;
-
-  // Delegate cell.
-  myelin::Cell *cell_ = nullptr;
-
-  // Name and runtime.
-  string name_;
-  string runtime_;
-};
-
-#define REGISTER_DELEGATE_RUNTIME(type, component) \
-    REGISTER_COMPONENT_TYPE(sling::nlp::Delegate, type, component)
-
-// Cascade model.
-class Cascade {
- public:
-  ~Cascade();
-
-  // Initializes the cascade by reading its specification from 'spec'
-  // and implementation from 'network'.
-  void Initialize(const myelin::Network &network, const Frame &spec);
-
-  // Returns a new cascade instance for carrying out computation.
-  CascadeInstance *CreateInstance() const;
-
-  // Delegate accessors.
-  Delegate *delegate(int i) const { return delegates_[i]; }
-  int size() const { return delegates_.size(); }
-
-  // Sets action table.
-  void set_actions(const ActionTable *t) { actions_ = t; }
-
- private:
-  friend class CascadeInstance;
-
-  // List of delegates.
-  std::vector<Delegate *> delegates_;
-
-  // Action table.
-  const ActionTable *actions_ = nullptr;
-};
-
-// Runs an instance of a cascade on a document.
-class CascadeInstance {
- public:
-  CascadeInstance(const Cascade *cascade);
-  ~CascadeInstance();
-
-  // Outputs in 'output' the result of running the whole cascade on 'state'.
-  // The activation at index 'step' is used as input to all the delegates.
-  void Compute(myelin::Channel *activations,
-               int step,
-               ParserState *state,
-               ParserAction *output);
-
- private:
-  const Cascade *const cascade_ = nullptr;     // cascade; not owned
-  std::vector<myelin::Instance *> instances_;  // delegate-specific instances
-
-  // Fallback actions.
-  ParserAction shift_;
-  ParserAction stop_;
-};
 
 // Frame semantics parser model.
 class Parser {
@@ -243,8 +149,6 @@ class ParserInstance {
  public:
   ParserInstance(const Parser *parser, Document *document, int begin, int end);
 
-  ~ParserInstance() { delete cascade_; }
-
   // Attach channel for FF.
   void AttachFF(int output, const myelin::BiChannel &bilstm);
 
@@ -273,7 +177,7 @@ class ParserInstance {
   myelin::Channel ff_step_;
 
   // Instance for cascade computations.
-  CascadeInstance *cascade_ = nullptr;
+  CascadeInstance cascade_ = nullptr;
 
   // Frame creation and focus steps.
   std::vector<int> create_step_;
