@@ -308,7 +308,8 @@ def train(args):
   resources.load(commons_path=args.commons,
                  train_path=args.train_corpus,
                  word_embeddings_path=args.word_embeddings,
-                 small_spec=args.small)
+                 small_spec=args.small,
+                 cascade=args.cascade)
 
   caspar = Caspar(resources.spec)
   caspar.initialize()

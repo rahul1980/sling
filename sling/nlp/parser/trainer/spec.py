@@ -289,7 +289,7 @@ class Spec:
 
 
   # Builds the spec using 'corpora'.
-  def build(self, commons, corpora):
+  def build(self, commons, corpora, cascade_class=None):
     if type(commons) is str:
       self.commons_path = commons
       commons = sling.Store()
@@ -321,7 +321,10 @@ class Spec:
     self._specify_features()
 
     # Build cascade.
-    self.cascade = cascade.ShiftPropbankEvokeCascade(self.actions)
+    if cascade_class is None:
+      self.cascade = cascade.FlatCascade(self.actions)
+    else:
+      self.cascade = cascade_class(self.actions)
     print self.cascade
 
 

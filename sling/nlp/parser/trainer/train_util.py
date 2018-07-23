@@ -16,6 +16,7 @@ import os
 import psutil
 import sling
 import subprocess
+import sys
 
 from datetime import datetime
 
@@ -88,6 +89,11 @@ def setup_training_flags(flags):
                default="local/data/corpora/sempar/word2vec-32-embeddings.bin",
                type=str,
                metavar='WORD_EMBEDDINGS_FILE')
+  flags.define('--cascade',
+               help='(Optional) Classname of cascade to use',
+               default="",
+               type=str,
+               metavar='CASCADE_CLASS_NAME')
 
   # Training hyperparameters.
   # Notable omissions: decay_steps, dropout_rate.
@@ -159,6 +165,7 @@ class Resources:
     self.schema = None
     self.train = None
     self.spec = None
+    self.cascade_name = None
 
 
   # Loads the common store, an iterator over a recordio training corpus,
@@ -167,7 +174,8 @@ class Resources:
            commons_path,
            train_path,
            word_embeddings_path=None,
-           small_spec=False):
+           small_spec=False,
+           cascade=None):
     print "Loading training resources"
     print "Initial memory usage", mem()
     self.commons_path = commons_path
@@ -180,9 +188,19 @@ class Resources:
         train_path, self.commons, self.schema, gold=True, loop=False)
     print "Pointed to training corpus in", train_path, mem()
 
+    # Get the cascade class name.
+    if cascade == "": cascade = None
+    if cascade is not None:
+      module = "cascade"
+      index = cascade.find(".")
+      if index != -1:
+        module = cascade[0:i]
+        cascade = cascade[i+1:]
+      cascade = getattr(sys.modules[module], cascade)
+
     self.spec = Spec(small_spec)
     self.spec.commons_path = commons_path
-    self.spec.build(self.commons, self.train)
+    self.spec.build(self.commons, self.train, cascade)
     print "After building spec", mem()
 
     if word_embeddings_path != "" and word_embeddings_path is not None:
