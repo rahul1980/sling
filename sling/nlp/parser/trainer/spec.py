@@ -186,6 +186,7 @@ class Spec:
     end = min(self.suffixes_max_length, len(unicode_chars))
     for start in xrange(end, 0, -1):
       output.append("".join(unicode_chars[-start:]))
+
     return output
 
 
@@ -210,6 +211,8 @@ class Spec:
     writeint(self.suffix.size(), buf)
     for i in xrange(self.suffix.size()):
       v = self.suffix.value(i)
+      if v == "": continue
+
       if type(v) is unicode:
         v_str = v.encode("utf-8")
       else:
@@ -304,6 +307,7 @@ class Spec:
     self.commons = commons
     self.words = Lexicon(self.words_normalize_digits)
     self.suffix = Lexicon(self.words_normalize_digits, oov_item=None)
+    self.suffix.add("")
 
     corpora.rewind()
     corpora.set_gold(False)   # No need to compute gold transitions yet
@@ -391,7 +395,10 @@ class Spec:
         for index, token in enumerate(document.tokens):
           suffixes = self.get_suffixes(token.text, chars[index])
           ids = [self.suffix.index(s) for s in suffixes]
-          features.add([i for i in ids if i is not None])  # no OOV in suffixes
+          ids = [i for i in ids if i is not None]  # ignore unknown suffixes
+          if len(ids) < self.suffixes_max_length:
+            ids.append(self.suffix.index(""))  # fallback
+          features.add(ids)
       elif f.name == "hyphen":
         for index, token in enumerate(document.tokens):
           hyphen = any(c == 'Pd' for c in categories[index])
@@ -538,18 +545,26 @@ class Spec:
 
 
   # Debugging methods.
-  #
-  # Returns feature strings for LSTM feature indices in 'indices'. All indices
-  # are assumed to belong to a single feature whose spec is in 'feature_spec'.
-  def lstm_feature_strings(self, feature_spec, indices):
-    strings = []
-    if feature_spec.name == "word":
-      strings = [self.words.value(index) for index in indices]
-    elif feature_spec.name == "suffix":
-      strings = [self.suffix.value(index) for index in indices]
-    else:
-      raise ValueError(feature_spec.name + " not implemented")
-    return str(strings)
+  # Prints raw lstm features with a special prefix so that they can be grepped
+  # and compared with another set of feature strings.
+  def print_lstm_features(self, document, features):
+    assert len(features) == len(self.lstm_features)
+    for fidx, f in enumerate(self.lstm_features):
+      assert len(document.tokens) == len(features[fidx].indices)
+      for i, vals in enumerate(features[fidx].indices):
+        text = "(" + document.tokens[i].text + ")"
+        if type(vals) is int:
+          last = str(vals)
+          # For suffixes, also print the feature string.
+          if f.name == "suffix":
+            last = last + " Value=(" + self.suffix.value(vals) + ")"
+          print "LEXDEBUG", f.name, "token", i, text, "=", last
+        else:
+          for v in vals:
+            last = str(v)
+            if f.name == "suffix":
+              last = last + " Value=(" + self.suffix.value(v) + ")"
+            print "LEXDEBUG", f.name, "token", i, text, "=", last
 
 
   # Returns feature strings for FF feature indices provided in 'indices'.

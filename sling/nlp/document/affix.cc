@@ -78,13 +78,14 @@ void AffixTable::Read(InputStream *stream) {
   // Read affixes.
   string form;
   std::vector<int> link(size, -1);
-  for (int affix_id = 0; affix_id < size; ++affix_id) {
+  for (int affix_id = 1; affix_id < size; ++affix_id) {
     form.clear();
     uint32 bytes, length, shorter;
 
     CHECK(input.ReadVarint32(&bytes));
     CHECK(input.ReadString(bytes, &form));
     CHECK(input.ReadVarint32(&length));
+    CHECK_GT(bytes, 0) << "AffixTable shouldn't have the empty string";
     if (length > 1) {
       CHECK(input.ReadVarint32(&shorter));
       link[affix_id] = shorter;
@@ -93,15 +94,14 @@ void AffixTable::Read(InputStream *stream) {
     DCHECK_LE(length, max_length_);
     DCHECK(FindAffix(form) == nullptr);
     Affix *affix = AddNewAffix(form, length);
-    if (bytes == 0) empty_ = affix;
-    DCHECK_EQ(affix->id(), affix_id);
+    CHECK_EQ(affix->id(), affix_id);
   }
   DCHECK_EQ(size, affixes_.size());
 
   // Link affixes.
   for (int affix_id = 0; affix_id < size; ++affix_id) {
     Affix *affix = affixes_[affix_id];
-    if (link[affix_id] == -1) {
+    if ((link[affix_id] == -1) && (affix != empty_)) {
       DCHECK_EQ(affix->length(), 1);
       affix->set_shorter(empty_);
       continue;
@@ -115,6 +115,7 @@ void AffixTable::Read(InputStream *stream) {
     DCHECK_EQ(affix->length(), shorter->length() + 1);
     affix->set_shorter(shorter);
   }
+  empty_->set_shorter(nullptr);
 }
 
 void AffixTable::Write(OutputStream *stream) const {
