@@ -316,71 +316,6 @@ int LexicalFeatures::InitWordEmbeddings(const string &filename) {
   return found;
 };
 
-void print(const string &f, const Document &doc, int i, int val,
-  string val_str="") {
-  std::cout << "LEXDEBUG " << f << " token " << i << " ("
-            << doc.token(i).text() << ") = " << val;
-  if (f == "suffix") std::cout << " Value=(" << val_str << ")";
-  std::cout << "\n";
-}
-
-void LexicalFeatureExtractor::PrintFeatures(
-    const DocumentFeatures &f,
-    const Document &doc, int begin, int end) {
-  if (end == -1) end = doc.num_tokens();
-  if (lex_.word_feature_) {
-    for (int i = begin; i < end; ++i) {
-      print("word", doc, i, f.word(i - begin));
-    }
-  }
-  if (lex_.suffix_feature_) {
-    for (int i = begin; i < end; ++i) {
-      Affix *affix = f.suffix(i - begin);
-      while (affix != nullptr) {
-        print("suffix", doc, i, affix->id(), affix->form());
-        affix = affix->shorter();
-      }
-    }
-  }
-  if (lex_.prefix_feature_) {
-    for (int i = begin; i < end; ++i) {
-      Affix *affix = f.prefix(i - begin);
-      while (affix != nullptr) {
-        print("prefix", doc, i, affix->id(), affix->form());
-        affix = affix->shorter();
-      }
-    }
-  }
-
-
-  if (lex_.caps_feature_) {
-    for (int i = begin; i < end; ++i) {
-      print("capitalization", doc, i, f.capitalization(i - begin));
-    }
-  }
-
-  if (lex_.hyphen_feature_) {
-    for (int i = begin; i < end; ++i) {
-      print("hyphen", doc, i, f.hyphen(i - begin));
-    }
-  }
-  if (lex_.punct_feature_) {
-    for (int i = begin; i < end; ++i) {
-      print("punctuation", doc, i, f.punctuation(i - begin));
-    }
-  }
-  if (lex_.quote_feature_) {
-    for (int i = begin; i < end; ++i) {
-      print("quote", doc, i, f.quote(i - begin));
-    }
-  }
-  if (lex_.digit_feature_) {
-    for (int i = begin; i < end; ++i) {
-      print("digit", doc, i, f.digit(i - begin));
-    }
-  }
-}
-
 void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
                                       int index, float *fv) {
   // Extract word feature.
@@ -453,7 +388,6 @@ void LexicalFeatureExtractor::Extract(const Document &document,
   // Extract lexical features from document.
   DocumentFeatures features(&lex_.lexicon_);
   features.Extract(document, begin, end);
-  PrintFeatures(features, document, begin, end);
 
   // Compute feature vectors.
   int length = end - begin;

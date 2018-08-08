@@ -182,7 +182,7 @@ Affix *AffixTable::AddAffixesForWord(Text word) {
     affix_len--;
   }
 
-  CHECK(top != nullptr);   // Make DCHECK
+  DCHECK(top != nullptr);
   return top;
 }
 
@@ -251,7 +251,7 @@ Affix *AffixTable::GetLongestAffix(Text word) const {
     while (p >= start) {
       Affix *affix = FindAffix(Text(start, p - start));
       if (affix != nullptr) return affix;
-      CHECK_GT(p, start);  // Make DCHECK_GT
+      DCHECK_GT(p, start);
       p = UTF8::Previous(p);
     }
   } else {
@@ -260,11 +260,12 @@ Affix *AffixTable::GetLongestAffix(Text word) const {
     while (p <= end) {
       Affix *affix = FindAffix(Text(p, end - p));
       if (affix != nullptr) return affix;
-      CHECK_LT(p, end);  // Make DCHECK_LT
+      DCHECK_LT(p, end);
       p = UTF8::Next(p);
     }
   }
-  CHECK(false);  // Should not reach here. Make DCHECK.
+
+  LOG(FATAL) << "Should not reach here:" << word;
   return nullptr;
 }
 
