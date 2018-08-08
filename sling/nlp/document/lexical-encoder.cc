@@ -14,8 +14,6 @@
 
 #include "sling/nlp/document/lexical-encoder.h"
 
-#include <iostream>
-
 #include "sling/myelin/builder.h"
 #include "sling/myelin/gradient.h"
 #include "sling/util/embeddings.h"

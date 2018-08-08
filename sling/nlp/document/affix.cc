@@ -90,7 +90,7 @@ void AffixTable::Read(InputStream *stream) {
     DCHECK_LE(length, max_length_);
     DCHECK(FindAffix(form) == nullptr);
     Affix *affix = AddNewAffix(form, length);
-    CHECK_EQ(affix->id(), affix_id);
+    DCHECK_EQ(affix->id(), affix_id);
   }
   DCHECK_EQ(size, affixes_.size());
 
@@ -98,7 +98,7 @@ void AffixTable::Read(InputStream *stream) {
   for (int affix_id = 0; affix_id < size; ++affix_id) {
     Affix *affix = affixes_[affix_id];
     if (link[affix_id] == -1) {
-      CHECK_EQ(affix->length(), 0);
+      DCHECK_EQ(affix->length(), 0);
       affix->set_shorter(nullptr);
       continue;
     }
