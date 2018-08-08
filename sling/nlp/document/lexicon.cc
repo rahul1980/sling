@@ -173,6 +173,7 @@ void Lexicon::BuildPrefixes(int max_prefix) {
       entry.prefix = prefixes_.AddAffixesForWord(entry.word);
     }
   }
+  prefixes_.AddAffixesForWord("");
 }
 
 void Lexicon::BuildSuffixes(int max_suffix) {
@@ -182,6 +183,7 @@ void Lexicon::BuildSuffixes(int max_suffix) {
       entry.suffix = suffixes_.AddAffixesForWord(entry.word);
     }
   }
+  suffixes_.AddAffixesForWord("");
 }
 
 void Lexicon::PrecomputeShapes() {

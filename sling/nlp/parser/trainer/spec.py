@@ -186,6 +186,7 @@ class Spec:
     end = min(self.suffixes_max_length, len(unicode_chars))
     for start in xrange(end, 0, -1):
       output.append("".join(unicode_chars[-start:]))
+    output.append("")  # empty suffix
 
     return output
 
@@ -211,7 +212,6 @@ class Spec:
     writeint(self.suffix.size(), buf)
     for i in xrange(self.suffix.size()):
       v = self.suffix.value(i)
-      if v == "": continue
 
       if type(v) is unicode:
         v_str = v.encode("utf-8")
@@ -222,7 +222,7 @@ class Spec:
       writeint(len(v_str), buf)       # number of bytes
       for x in v_str: buf.append(x)   # the bytes themselves
       writeint(len(v), buf)           # number of characters
-      if len(v) > 1:
+      if len(v) > 0:
         shorter = v[1:]
         shorter_idx = self.suffix.index(shorter)
         assert shorter_idx is not None, shorter
@@ -255,7 +255,7 @@ class Spec:
     if self.oov_features:
       self.add_lstm_fixed(
           "suffix", self.suffixes_dim, self.suffix.size(), \
-          self.suffixes_max_length)
+          self.suffixes_max_length + 1)  # +1 to account for the empty affix
       self.add_lstm_fixed(
           "capitalization", self.fallback_dim, Spec.CAPITALIZATION_CARDINALITY)
       self.add_lstm_fixed("hyphen", self.fallback_dim, Spec.HYPHEN_CARDINALITY)
@@ -307,7 +307,6 @@ class Spec:
     self.commons = commons
     self.words = Lexicon(self.words_normalize_digits)
     self.suffix = Lexicon(self.words_normalize_digits, oov_item=None)
-    self.suffix.add("")
 
     corpora.rewind()
     corpora.set_gold(False)   # No need to compute gold transitions yet
@@ -396,8 +395,6 @@ class Spec:
           suffixes = self.get_suffixes(token.text, chars[index])
           ids = [self.suffix.index(s) for s in suffixes]
           ids = [i for i in ids if i is not None]  # ignore unknown suffixes
-          if len(ids) < self.suffixes_max_length:
-            ids.append(self.suffix.index(""))  # fallback
           features.add(ids)
       elif f.name == "hyphen":
         for index, token in enumerate(document.tokens):

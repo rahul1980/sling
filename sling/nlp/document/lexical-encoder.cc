@@ -14,6 +14,8 @@
 
 #include "sling/nlp/document/lexical-encoder.h"
 
+#include <iostream>
+
 #include "sling/myelin/builder.h"
 #include "sling/myelin/gradient.h"
 #include "sling/util/embeddings.h"
@@ -117,8 +119,6 @@ void LexicalFeatures::InitializeLexicon(Vocabulary::Iterator *words,
   lexicon_.set_normalization(normalization);
 
   // Build affix tables.
-  prefix_size_ = spec.max_prefix;
-  suffix_size_ = spec.max_suffix;
   lexicon_.BuildPrefixes(spec.max_prefix);
   lexicon_.BuildSuffixes(spec.max_suffix);
 
@@ -152,12 +152,14 @@ LexicalFeatures::Variables LexicalFeatures::Build(Flow *flow,
     }
   }
   if (spec.prefix_dim > 0) {
-    auto *f = tf.Feature("prefix", lexicon_.prefixes().size(), prefix_size_,
+    const auto &p = lexicon_.prefixes();
+    auto *f = tf.Feature("prefix", p.size(), p.max_length() + 1,
                          spec.prefix_dim);
     features.push_back(f);
   }
   if (spec.suffix_dim > 0) {
-    auto *f = tf.Feature("suffix", lexicon_.suffixes().size(), suffix_size_,
+    const auto &s = lexicon_.suffixes();
+    auto *f = tf.Feature("suffix", s.size(), s.max_length() + 1,
                          spec.suffix_dim);
     features.push_back(f);
   }
@@ -237,10 +239,6 @@ void LexicalFeatures::Initialize(const Network &net) {
     primal_ = net.GetParameter(gname + "/primal");
   }
 
-  // Get feature sizes.
-  if (prefix_feature_ != nullptr) prefix_size_ = prefix_feature_->elements();
-  if (suffix_feature_ != nullptr) suffix_size_ = suffix_feature_->elements();
-
   // Load pre-trained word embeddings.
   if (!pretrained_embeddings_.empty()) {
     InitWordEmbeddings(pretrained_embeddings_);
@@ -318,6 +316,71 @@ int LexicalFeatures::InitWordEmbeddings(const string &filename) {
   return found;
 };
 
+void print(const string &f, const Document &doc, int i, int val,
+  string val_str="") {
+  std::cout << "LEXDEBUG " << f << " token " << i << " ("
+            << doc.token(i).text() << ") = " << val;
+  if (f == "suffix") std::cout << " Value=(" << val_str << ")";
+  std::cout << "\n";
+}
+
+void LexicalFeatureExtractor::PrintFeatures(
+    const DocumentFeatures &f,
+    const Document &doc, int begin, int end) {
+  if (end == -1) end = doc.num_tokens();
+  if (lex_.word_feature_) {
+    for (int i = begin; i < end; ++i) {
+      print("word", doc, i, f.word(i - begin));
+    }
+  }
+  if (lex_.suffix_feature_) {
+    for (int i = begin; i < end; ++i) {
+      Affix *affix = f.suffix(i - begin);
+      while (affix != nullptr) {
+        print("suffix", doc, i, affix->id(), affix->form());
+        affix = affix->shorter();
+      }
+    }
+  }
+  if (lex_.prefix_feature_) {
+    for (int i = begin; i < end; ++i) {
+      Affix *affix = f.prefix(i - begin);
+      while (affix != nullptr) {
+        print("prefix", doc, i, affix->id(), affix->form());
+        affix = affix->shorter();
+      }
+    }
+  }
+
+
+  if (lex_.caps_feature_) {
+    for (int i = begin; i < end; ++i) {
+      print("capitalization", doc, i, f.capitalization(i - begin));
+    }
+  }
+
+  if (lex_.hyphen_feature_) {
+    for (int i = begin; i < end; ++i) {
+      print("hyphen", doc, i, f.hyphen(i - begin));
+    }
+  }
+  if (lex_.punct_feature_) {
+    for (int i = begin; i < end; ++i) {
+      print("punctuation", doc, i, f.punctuation(i - begin));
+    }
+  }
+  if (lex_.quote_feature_) {
+    for (int i = begin; i < end; ++i) {
+      print("quote", doc, i, f.quote(i - begin));
+    }
+  }
+  if (lex_.digit_feature_) {
+    for (int i = begin; i < end; ++i) {
+      print("digit", doc, i, f.digit(i - begin));
+    }
+  }
+}
+
 void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
                                       int index, float *fv) {
   // Extract word feature.
@@ -329,7 +392,7 @@ void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
   if (lex_.prefix_feature_) {
     Affix *affix = features.prefix(index);
     int *a = data_.Get<int>(lex_.prefix_feature_);
-    for (int n = 0; n < lex_.prefix_size_; ++n) {
+    for (int n = 0; n <= lex_.lexicon().prefixes().max_length(); ++n) {
       if (affix != nullptr) {
         *a++ = affix->id();
         affix = affix->shorter();
@@ -343,7 +406,7 @@ void LexicalFeatureExtractor::Compute(const DocumentFeatures &features,
   if (lex_.suffix_feature_) {
     Affix *affix = features.suffix(index);
     int *a = data_.Get<int>(lex_.suffix_feature_);
-    for (int n = 0; n < lex_.suffix_size_; ++n) {
+    for (int n = 0; n <= lex_.lexicon().suffixes().max_length(); ++n) {
       if (affix != nullptr) {
         *a++ = affix->id();
         affix = affix->shorter();
@@ -390,6 +453,7 @@ void LexicalFeatureExtractor::Extract(const Document &document,
   // Extract lexical features from document.
   DocumentFeatures features(&lex_.lexicon_);
   features.Extract(document, begin, end);
+  PrintFeatures(features, document, begin, end);
 
   // Compute feature vectors.
   int length = end - begin;

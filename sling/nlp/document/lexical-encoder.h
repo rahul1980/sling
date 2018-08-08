@@ -113,9 +113,6 @@ class LexicalFeatures {
   myelin::Tensor *feature_vector_ = nullptr;   // output feature vector
   myelin::Tensor *word_embeddings_ = nullptr;  // word embedding matrix
 
-  int prefix_size_ = 0;                        // max prefix length
-  int suffix_size_ = 0;                        // max suffix length
-
   myelin::Cell *gfeatures_ = nullptr;          // gradient cell
   myelin::Tensor *d_feature_vector_;           // feature vector gradient
   myelin::Tensor *primal_;                     // reference to primal cell
@@ -133,6 +130,9 @@ class LexicalFeatureExtractor {
 
   // Compute feature vector for token.
   void Compute(const DocumentFeatures &features, int index, float *fv);
+
+  void PrintFeatures(const DocumentFeatures &features, const Document &doc,
+      int begin, int end);
 
   // Extract lexical features from a range of tokens in a document and output
   // the feature vectors to a channel.

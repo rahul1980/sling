@@ -385,6 +385,7 @@ class Caspar(nn.Module):
   def _lstm_outputs(self, document):
     # Compute all raw token features just once for both the LSTMs.
     raw_features = self.spec.raw_lstm_features(document)
+    self.spec.print_lstm_features(document, raw_features)
     length = document.size()
 
     # 'lstm_inputs' should have shape (length, lstm_input_dim).
