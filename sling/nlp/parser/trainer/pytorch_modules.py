@@ -382,10 +382,11 @@ class Caspar(nn.Module):
 
 
   # Returns the outputs from both the LSTMs for all tokens in 'document'.
-  def _lstm_outputs(self, document):
+  def _lstm_outputs(self, document, print_features=False):
     # Compute all raw token features just once for both the LSTMs.
     raw_features = self.spec.raw_lstm_features(document)
     length = document.size()
+    if print_features: self.spec.print_lstm_features(document, raw_features)
 
     # 'lstm_inputs' should have shape (length, lstm_input_dim).
     lstm_inputs = self._embedding_lookup(self.lstm_embeddings, raw_features)
@@ -466,7 +467,7 @@ class Caspar(nn.Module):
   # Makes a forward pass over 'document'.
   def forward(self, document, train=False):
     # Compute LSTM outputs for all tokens.
-    lr_out, rl_out, _ = self._lstm_outputs(document)
+    lr_out, rl_out, _ = self._lstm_outputs(document, print_features=not train)
 
     # Run FF unit.
     state = ParserState(document, self.spec)

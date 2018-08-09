@@ -131,6 +131,9 @@ class LexicalFeatureExtractor {
   // Compute feature vector for token.
   void Compute(const DocumentFeatures &features, int index, float *fv);
 
+  void PrintFeatures(const DocumentFeatures &features, const Document &doc,
+      int begin, int end);
+
   // Extract lexical features from a range of tokens in a document and output
   // the feature vectors to a channel.
   void Extract(const Document &document, int begin, int end,
