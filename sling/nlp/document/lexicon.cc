@@ -168,22 +168,22 @@ void Lexicon::WriteSuffixes(string *buffer) const {
 
 void Lexicon::BuildPrefixes(int max_prefix) {
   prefixes_.Reset(max_prefix);
+  prefixes_.AddAffixesForWord("");
   if (max_prefix > 0) {
     for (Entry &entry : words_) {
       entry.prefix = prefixes_.AddAffixesForWord(entry.word);
     }
   }
-  prefixes_.AddAffixesForWord("");
 }
 
 void Lexicon::BuildSuffixes(int max_suffix) {
   suffixes_.Reset(max_suffix);
+  suffixes_.AddAffixesForWord("");
   if (max_suffix > 0) {
     for (Entry &entry : words_) {
       entry.suffix = suffixes_.AddAffixesForWord(entry.word);
     }
   }
-  suffixes_.AddAffixesForWord("");
 }
 
 void Lexicon::PrecomputeShapes() {

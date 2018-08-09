@@ -153,7 +153,7 @@ Affix *AffixTable::AddAffixesForWord(Text word) {
   // Try to find successively shorter affixes.
   Affix *top = nullptr;
   Affix *ancestor = nullptr;
-  while (affix_len > -1) {
+  while (affix_len >= 0) {
     // Try to find affix in table.
     Text s(start, end - start);
     Affix *affix = FindAffix(s);
