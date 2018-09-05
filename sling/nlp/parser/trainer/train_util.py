@@ -194,3 +194,10 @@ class Resources:
       self.spec.load_word_embeddings(word_embeddings_path)
       print "After loading pre-trained word embeddings", mem()
 
+
+  def from_spec(self, spec, train_path):
+    self.spec = spec
+    self.commons = spec.commons
+    self.commons_path = spec.commons_path
+    self.schema = sling.DocumentSchema(spec.commons)
+    self.train = Corpora(train_path, self.commons, self.schema, gold=True)

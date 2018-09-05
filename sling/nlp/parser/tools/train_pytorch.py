@@ -24,6 +24,7 @@ from functools import partial
 sys.path.insert(0, "sling/nlp/parser/trainer")
 import commons_from_corpora as commons_builder
 from pytorch_modules import Caspar
+from spec import Spec
 from train_util import Resources, setup_training_flags
 from trainer import Hyperparams, Trainer, dev_accuracy
 
@@ -64,8 +65,14 @@ def train(args):
                  word_embeddings_path=args.word_embeddings,
                  small_spec=args.small)
 
-  caspar = Caspar(resources.spec)
+  #caspar = Caspar(resources.spec)
+  #caspar.initialize()
+
+  encoded = resources.spec.encode()
+  decoded = Spec.decode(encoded)
+  caspar = Caspar(decoded)
   caspar.initialize()
+  resources.from_spec(decoded, args.train_corpus)
 
   tmp_folder = os.path.join(args.output_folder, "tmp")
   if not os.path.exists(tmp_folder):

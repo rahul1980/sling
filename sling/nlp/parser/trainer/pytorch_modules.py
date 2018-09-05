@@ -284,22 +284,23 @@ class Caspar(nn.Module):
       embedding = nn.EmbeddingBag(f.vocab_size, f.dim, mode='sum')
       self.add_module('lstm_embedding_' + f.name, embedding)
       self.lstm_embeddings.append(embedding)
-      f.embedding = embedding
 
     # LR and RL LSTM cells.
     self.lr_lstm = DragnnLSTM(spec.lstm_input_dim, spec.lstm_hidden_dim)
     self.rl_lstm = DragnnLSTM(spec.lstm_input_dim, spec.lstm_hidden_dim)
 
     # FF Embeddings and network.
+    self.ff_fixed_embeddings = []
     for f in spec.ff_fixed_features:
       embedding = nn.EmbeddingBag(f.vocab_size, f.dim, mode='sum')
       self.add_module('ff_fixed_embedding_' + f.name, embedding)
-      f.bag = embedding
+      self.ff_fixed_embeddings.append(embedding)
 
+    self.ff_link_transforms = []
     for f in spec.ff_link_features:
       transform = LinkTransform(f.activation_size, f.dim)
       self.add_module('ff_link_transform_' + f.name, transform)
-      f.transform = transform
+      self.ff_link_transforms.append(transform)
 
     # Feedforward unit trunk.
     h = spec.ff_hidden_dim
@@ -324,18 +325,20 @@ class Caspar(nn.Module):
 
   # Initializes various module parameters.
   def initialize(self):
+    spec = self.spec
+
     # Initialize the embeddings to gaussian(mean=0, stddev=1/sqrt(dim)),
     # where 'dim' is the dimensionality of the embedding.
-    for f in self.spec.lstm_features:
+    for f, embedding in zip(spec.lstm_features, self.lstm_embeddings):
       coeff = 1.0 / math.sqrt(f.dim)
-      matrix = f.embedding.weight.data
+      matrix = embedding.weight.data
       matrix.normal_()
       matrix.mul_(coeff)
 
       # Override with pre-trained word embeddings, if provided.
-      if f.name == "word" and self.spec.word_embeddings is not None:
-        indices = torch.LongTensor(self.spec.word_embedding_indices)
-        data = torch.Tensor(self.spec.word_embeddings)
+      if f.name == "word" and spec.word_embeddings is not None:
+        indices = torch.LongTensor(spec.word_embedding_indices)
+        data = torch.Tensor(spec.word_embeddings)
 
         # Separately normalize each embedding row
         data = torch.nn.functional.normalize(data)
@@ -346,12 +349,12 @@ class Caspar(nn.Module):
             "embedding vectors with normalized pre-trained vectors."
 
     # Initialize the FF's fixed and link embeddings like those in the LSTMs.
-    for f in self.spec.ff_fixed_features:
-      f.bag.weight.data.normal_()
-      f.bag.weight.data.mul_(1.0 / math.sqrt(f.dim))
+    for f, bag in zip(spec.ff_fixed_features, self.ff_fixed_embeddings):
+      bag.weight.data.normal_()
+      bag.weight.data.mul_(1.0 / math.sqrt(f.dim))
 
-    for f in self.spec.ff_link_features:
-      f.transform.init(1.0 / math.sqrt(f.dim))
+    for f, transform in zip(spec.ff_link_features, self.ff_link_transforms):
+      transform.init(1.0 / math.sqrt(f.dim))
 
     # Initialize the LSTM and FF parameters with gaussian(mean=0, stddev=1e-4).
     params = [self.ff_layer.weight]
@@ -424,22 +427,23 @@ class Caspar(nn.Module):
     assert len(ff_activations) == state.steps
     ff_input_parts = []
     ff_input_parts_debug = []
-
+    spec = self.spec
+    
     # Fixed features.
-    for f in self.spec.ff_fixed_features:
-      raw_features = self.spec.raw_ff_fixed_features(f, state)
+    for f, bag in zip(spec.ff_fixed_features, self.ff_fixed_embeddings):
+      raw_features = spec.raw_ff_fixed_features(f, state)
 
       embedded_features = None
       if len(raw_features) == 0:
         embedded_features = Var(torch.zeros(1, f.dim))
       else:
-        embedded_features = f.bag(
+        embedded_features = bag(
           Var(torch.LongTensor(raw_features)), Var(torch.LongTensor([0])))
       ff_input_parts.append(embedded_features)
       if debug: ff_input_parts_debug.append((f, raw_features))
 
     # Link features.
-    for f in self.spec.ff_link_features:
+    for f, transform in zip(spec.ff_link_features, self.ff_link_transforms):
       link_debug = (f, [])
 
       # Figure out where we need to pick the activations from.
@@ -451,7 +455,7 @@ class Caspar(nn.Module):
 
       # Get indices into the activations. Recall that missing indices are
       # indicated via None, and they map to the last row in 'transform'.
-      indices = self.spec.translated_ff_link_features(f, state)
+      indices = spec.translated_ff_link_features(f, state)
       assert len(indices) == f.num
 
       for index in indices:
@@ -460,7 +464,7 @@ class Caspar(nn.Module):
           l = len(activations)
           assert index >= 0 and index < l, (f.name, index, l)
           activation = activations[index]
-        vec = f.transform.forward(activation)
+        vec = transform.forward(activation)
         ff_input_parts.append(vec)
 
       if debug:
@@ -623,10 +627,11 @@ class Caspar(nn.Module):
     ff_cnx.add(flow_ff.hidden_out)
 
     # Add FF's input variables.
-    for feature in spec.ff_fixed_features:
-      write_fixed_feature(feature, feature.bag, ff, ff_concat_op)
+    for feature, bag in zip(spec.ff_fixed_features, self.ff_fixed_embeddings):
+      write_fixed_feature(feature, bag, ff, ff_concat_op)
 
-    for feature in spec.ff_link_features:
+    for feature, transform in zip(
+        spec.ff_link_features, self.ff_link_transforms):
       indices = index_vars(ff, feature)
 
       activations = None
@@ -648,14 +653,15 @@ class Caspar(nn.Module):
           name=name + ":0", shape=[feature.num, activations.shape[1] + 1])
       collect.add_output(collected)
 
-      sz = feature.transform.weight.size()
-      transform = ff.var(name=feature.name + "/transform", shape=[sz[0], sz[1]])
-      transform.data = feature.transform.weight.data.numpy()
+      sz = transform.weight.size()
+      transform_var = ff.var(
+          name=feature.name + "/transform", shape=[sz[0], sz[1]])
+      transform_var.data = transform.weight.data.numpy()
 
       name = feature.name + "/MatMul"
       matmul = ff.rawop(optype="MatMul", name=name)
       matmul.add_input(collected)
-      matmul.add_input(transform)
+      matmul.add_input(transform_var)
       output = ff.var(name + ":0", shape=[feature.num, sz[1]])
       matmul.add_output(output)
       ff_concat_op.add_input(output)

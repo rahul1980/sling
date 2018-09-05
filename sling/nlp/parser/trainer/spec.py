@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import cascade
+import pickle
 import sling
 import struct
 import unicodedata
@@ -157,6 +158,46 @@ class Spec:
     self.ff_fixed_features = []
     self.ff_link_features = []
     self.cascade = None
+
+
+  @staticmethod
+  def decode(encoded):
+    spec = pickle.loads(encoded)
+    spec.commons = sling.Store()
+    spec.commons.load(spec.commons_path)
+    spec.commons.freeze()
+
+    assert '/table' in spec.commons
+    assert '/cascade' in spec.commons
+
+    spec.actions = Actions()
+    spec.actions.decode(spec.commons['/table'])
+
+    cascade_name = spec.commons['/cascade'].name
+    spec.cascade = getattr(cascade, cascade_name)(spec.actions)
+    return spec
+
+
+  def encode(self):
+    assert self.commons_path
+    assert self.actions
+    assert self.cascade
+    assert '/table' in self.commons, 'Commons does not have action table'
+    assert '/cascade' in self.commons, 'Commons does not have cascade spec'
+
+    (commons, actions, cascade) = (self.commons, self.actions, self.cascade)
+    self.commons = None
+    self.actions = None
+    self.cascade = None
+    
+    output = pickle.dumps(self)
+
+    # Restore missing fields.
+    self.commons = commons
+    self.actions = actions
+    self.cascade = cascade
+
+    return output
 
 
   # Builds an action table from 'corpora'.
