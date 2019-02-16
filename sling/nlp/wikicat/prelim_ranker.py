@@ -17,6 +17,7 @@
 # A signature replaces each (PID, QID) span in a parse by $PID=$label(QID),
 # where 'label' is derived using a custom taxonomy.
 
+import math
 import sling
 from sling.task.workflow import register_task
 from util import load_kb
@@ -29,53 +30,53 @@ class PrelimCategoryParseRanker:
 
     # Custom type ordering for building a taxonomy.
     taxonomy_types = [
-        'Q215627',     # person
-        'Q95074',      # fictional character
-        'Q729',        # animal
-        'Q4164871',    # position
-        'Q12737077',   # occupation
-        'Q216353',     # title
-        'Q618779',     # award
-        'Q27020041',   # sports season
-        'Q4438121',    # sports organization
-        'Q215380',     # band
-        'Q2385804',    # educational institution
-        'Q783794',     # company
-        'Q41710',      # ethnic group  (NEW TYPE)
-        'Q6256',       # country  (NEW TYPE)
+        'Q215627',     # person 25K
+        'Q95074',      # fictional character 303
+        'Q729',        # animal 25
+        'Q4164871',    # position 17K
+        'Q12737077',   # occupation 96K
+        'Q216353',     # title 1.4K
+        'Q618779',     # award 2.5K
+        'Q31629',      # type of sport
+        'Q27020041',   # sports season 2.5K
+        'Q4438121',    # sports organization 35K
+        'Q215380',     # band 8K
+        'Q2385804',    # educational institution 25K
+        'Q783794',     # company 20K
+        'Q41710',      # ethnic group  (NEW TYPE) 11K
+        'Q6256',       # country  (NEW TYPE) 194K
         'Q17334923',   # location
         'Q43229',      # organization
         'Q431289',     # brand
-        'Q2188189',    # musical work
-        'Q571',        # book
-        'Q732577',     # publication
-        'Q11424',      # film
-        'Q15416',      # television program
-        'Q12136',      # disease
-        'Q16521',      # taxon
-        'Q5058355',    # cellular component
-        'Q7187',       # gene
-        'Q11173',      # chemical compound
-        'Q811430',     # construction
-        'Q618123',     # geographical object
-        'Q1656682',    # event
-        'Q101352',     # family name
-        'Q202444',     # given name
-        'Q577',        # year
+        'Q571',        # book 485
+        'Q732577',     # publication 342
+        'Q11424',      # film 361
+        'Q15416',      # television program 1059
+        'Q12136',      # disease 483
+        'Q1931388',    # cause of death
+        'Q16521',      # taxon 2.2K
+        'Q5058355',    # cellular component 4
+        'Q7187',       # gene 1
+        'Q11173',      # chemical compound 45
+        'Q811430',     # construction 108
+        'Q618123',     # geographical object 1058
+        'Q1656682',    # event 14K
+        'Q101352',     # family name 2K
+        'Q202444',     # given name 1.7K
+        'Q577',        # year 84K
         'Q186081',     # time interval
         'Q11563',      # number
         'Q17376908',   # languoid
-        'Q1047113',    # specialty  (REORDERED)
-        'Q968159',     # art movement (NEW TYPE)
-        'Q483394',     # genre  (REORDERED)
-        'Q47574',      # unit of measurement (REPLACES unit)
-        'Q39875001',   # measure
-        'Q3695082',    # sign
-        'Q2996394',    # biological process
-        'Q11410',      # game
-        'Q7397',       # software
-        'Q838948',     # work of art
-        'Q47461344',   # written work
+        'Q1047113',    # specialty  (REORDERED) 5.2K
+        'Q968159',     # art movement (NEW TYPE) 772
+        'Q483394',     # genre  (REORDERED) 20K
+        'Q47574',      # unit of measurement (REPLACES unit) 38
+        'Q3695082',    # sign 327
+        'Q2996394',    # biological process 993
+        'Q11410',      # game 523
+        'Q7397',       # software 532
+        'Q838948',     # work of art 126
+        'Q47461344',   # written work 108
         'Q28877',      # goods
         'Q15401930',   # product
         'Q121769',     # reference
@@ -99,7 +100,7 @@ class PrelimCategoryParseRanker:
           qid_to_spans[span.qid] = set()
         qid_to_spans[span.qid].add((span.begin, span.end))
 
-    num_members = 1.0 * category.num_members
+    num_members = 1.0 * len(category.members)
     for parse in parses:
       prior = 1.0            # product of priors of all spans' QIDs
       member_score = 1.0     # product of proportions of members covered
@@ -114,6 +115,10 @@ class PrelimCategoryParseRanker:
         prior *= span.prior
         member_score *= span.count / num_members
         cover += span.end - span.begin
+
+      # Normalize all scores so that they can be compared across parses.
+      prior = math.pow(prior, 1.0 / len(spans))
+      member_score = math.pow(member_score, 1.0 / len(spans))
       cover /= 1.0 * len(category.document.tokens)
 
       overall_score = 0.0
@@ -132,7 +137,7 @@ class PrelimCategoryParseRanker:
 
   # Returns a signature for 'parse'. Spans in the parse are reported as
   # $PID=$label(QID), and tokens not covered by any span are reported as-is.
-  def signature(self, document, parse):
+  def signature(self, document, parse, coarse=False):
     tokens = []              # tokens in the full signature
     span_signature = {}      # span -> span's signature
     start = 0
@@ -145,8 +150,11 @@ class PrelimCategoryParseRanker:
         label = span.qid
       elif self.h_name in label:
         label = label[self.h_name]
-      pids = '.'.join([pid.name for pid in span.pids])
-      word = '$' + pids + '=$' + str(label)
+      if coarse:
+        word = str(label)
+      else:
+        pids = '.'.join([pid.name for pid in span.pids])
+        word = '$' + pids + '=$' + str(label)
       word = word.replace(' ', '_')
       span_signature[span] = word
       tokens.append(word)
@@ -187,6 +195,13 @@ class PrelimCategoryParseRanker:
         for span in parse.spans:
           if span in span_signature:
             span["signature"] = span_signature[span]
+
+        # Also compute the coarse signature.
+        tokens, span_signature = self.signature(document, parse, coarse=True)
+        parse["coarse_signature"] = tokens
+        for span in parse.spans:
+          if span in span_signature:
+            span["coarse_signature"] = span_signature[span]
 
       # Replace the current set of parses with the ranked list.
       del category["parse"]

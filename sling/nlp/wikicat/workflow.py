@@ -21,6 +21,7 @@ from sling.task.workflow import Workflow, start_monitor
 
 # Workflow tasks.
 import generator
+import kb_statistics
 import prelim_ranker
 
 
@@ -68,7 +69,19 @@ class CategoryParsingWorkflow:
       return output
 
 
-  # Stage 2: Generate a preliminary ranking of the parses, keeping the top-k.
+  def attach_fact_matches(self, input_parses):
+    with self.wf.namespace("attach-fact-matches"):
+      matcher = self.wf.task("category-parse-fact-matcher")
+      self.kb_input(matcher)
+      matcher.attach_input("parses", input_parses)
+      output = self.wf.resource(
+          "parses-with-match-statisticses.rec", \
+          dir=self.outdir, format="records/frame")
+      matcher.attach_output("output", output)
+      return output
+
+
+  # Stage 3: Generate a preliminary ranking of the parses, keeping the top-k.
   def prelim_rank_parses(self, input_parses, topk):
     with self.wf.namespace("rank-parses"):
       ranker = self.wf.task("prelim-category-parse-ranker")
@@ -111,7 +124,8 @@ if __name__ == '__main__':
   flags.parse()
   categories = CategoryParsingWorkflow("category-parsing", flags.arg.output)
   generated = categories.generate_parses(flags.arg.lang, flags.arg.min_members)
-  filtered = categories.prelim_rank_parses(generated, flags.arg.topk)
+  matched = categories.attach_fact_matches(generated, flags.arg.topk)
+  filtered = categories.prelim_rank_parses(matched, flags.arg.topk)
   print categories.wf.dump()
 
   start_monitor(flags.arg.port)

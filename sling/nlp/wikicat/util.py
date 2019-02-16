@@ -19,9 +19,14 @@ import sling.log as log
 
 def load_kb(task):
   kb = sling.Store()
-  kb.load(task.input("kb").name)
+  if type(task) is str:
+    kb.load(task)  # assume as filename
+  else:
+    kb.load(task.input("kb").name)
   log.info("Knowledge base read")
+  kb.lockgc()
   kb.freeze()
+  kb.unlockgc()
   log.info("Knowledge base frozen")
   return kb
 

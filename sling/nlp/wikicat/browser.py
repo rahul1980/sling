@@ -98,9 +98,8 @@ class Browser(BaseHTTPRequestHandler):
     self._begin("head")
     self._begin("script", language="javascript")
     self._text('\nfunction new_qid(qid) {')
-    self._text('\n  category_qid.value = qid;')
-    self._text('\n  main_form.method = "POST";')
-    self._text('\n  main_form.submit();')
+    self._text('\n  document.getElementById("category_qid").value = qid;')
+    self._text('\n  document.getElementById("main_form").submit();')
     self._text('\n}')
     self._end(["script", "head"])
     self._text('\n')
@@ -261,8 +260,8 @@ class Browser(BaseHTTPRequestHandler):
           if other_qid != qid and other_qid not in seen:
             seen.add(other_qid)
             self._text(other_name)
-            self._tag("span", " (=" + other_qid + ")", \
-              onclick='new_qid("' + other_qid + '")', style='color:blue')
+            self._tag("a", " (= " + other_qid + ")", \
+              onclick='new_qid("' + other_qid + '"); return false;', href='')
             self._text(" (%0.4f)" % score)
             self._br()
         self._end("td")
