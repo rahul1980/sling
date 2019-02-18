@@ -16,18 +16,26 @@
 import sling
 import sling.log as log
 
+_kb_cache = {}
 
 def load_kb(task):
-  kb = sling.Store()
   if type(task) is str:
-    kb.load(task)  # assume as filename
+    filename = task  # assume filename
   else:
-    kb.load(task.input("kb").name)
-  log.info("Knowledge base read")
-  kb.lockgc()
-  kb.freeze()
-  kb.unlockgc()
-  log.info("Knowledge base frozen")
-  return kb
+    filename = task.input("kb").name
+
+  if filename in _kb_cache:
+    log.info("Retrieving cached KB")
+    return _kb_cache[filename]
+  else:
+    kb = sling.Store()
+    kb.load(filename)
+    log.info("Knowledge base read")
+    kb.lockgc()
+    kb.freeze()
+    kb.unlockgc()
+    log.info("Knowledge base frozen")
+    _kb_cache[filename] = kb
+    return kb
 
 

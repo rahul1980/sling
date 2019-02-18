@@ -174,7 +174,14 @@ bool Facts::Subsumes(Handle property, Handle coarse, Handle fine) {
           if (value == coarse) {
             return true;
           } else if (!catalog_->IsBaseItem(value)) {
-            closure.push_back(value);
+            bool known = false;
+            for (Handle h : closure) {
+              if (value == h) {
+                known = true;
+                break;
+              }
+            }
+            if (!known) closure.push_back(value);
           }
         }
       }

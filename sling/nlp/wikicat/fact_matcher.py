@@ -34,7 +34,7 @@ class FactMatchType(Enum):
 
 
 """
-FactMatcher matches a proposed (source_qid, pid, target_qid) fact against 
+FactMatcher matches a proposed (source_qid, pid, target_qid) fact against
 any existing (source_qid, pid, _) facts.
 """
 class FactMatcher:
@@ -266,16 +266,17 @@ class FactMatcherTask:
     for key, value in reader:
       store = sling.Store(self.kb)
       category = store.parse(value)
-      matches = matcher.for_parses(category, store, max_evidences=-1)
-      match_cache = {}
+      matches = self.matcher.for_parses(category, store, max_evidences=-1)
+      frame_cache = {}
       for parse, parse_match in zip(category("parse"), matches):
         for span, span_match in zip(parse.spans, parse_match):
           span_key = (span.pids, span.qid)
           if span_key not in frame_cache:
             match_frame = span_match.as_frame(store)
-            match_cache[span_key] = match_frame
-          span["fact_matches"] = match_cache[span_key]
+            frame_cache[span_key] = match_frame
+          span["fact_matches"] = frame_cache[span_key]
       writer.write(key, category.data(binary=True))
+      task.increment("fact-matcher/categories-processed")
     reader.close()
     writer.close()
 

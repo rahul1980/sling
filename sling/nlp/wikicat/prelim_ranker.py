@@ -30,53 +30,53 @@ class PrelimCategoryParseRanker:
 
     # Custom type ordering for building a taxonomy.
     taxonomy_types = [
-        'Q215627',     # person 25K
-        'Q95074',      # fictional character 303
-        'Q729',        # animal 25
-        'Q4164871',    # position 17K
-        'Q12737077',   # occupation 96K
-        'Q216353',     # title 1.4K
-        'Q618779',     # award 2.5K
+        'Q215627',     # person
+        'Q95074',      # fictional character
+        'Q729',        # animal
+        'Q4164871',    # position
+        'Q12737077',   # occupation
+        'Q216353',     # title
+        'Q618779',     # award
         'Q31629',      # type of sport
-        'Q27020041',   # sports season 2.5K
-        'Q4438121',    # sports organization 35K
-        'Q215380',     # band 8K
-        'Q2385804',    # educational institution 25K
-        'Q783794',     # company 20K
-        'Q41710',      # ethnic group  (NEW TYPE) 11K
-        'Q6256',       # country  (NEW TYPE) 194K
+        'Q27020041',   # sports season
+        'Q4438121',    # sports organization
+        'Q215380',     # band
+        'Q2385804',    # educational institution
+        'Q783794',     # company
+        'Q41710',      # ethnic group
+        'Q6256',       # country
         'Q17334923',   # location
         'Q43229',      # organization
         'Q431289',     # brand
-        'Q571',        # book 485
-        'Q732577',     # publication 342
-        'Q11424',      # film 361
-        'Q15416',      # television program 1059
-        'Q12136',      # disease 483
+        'Q571',        # book
+        'Q732577',     # publication
+        'Q11424',      # film
+        'Q15416',      # television program
+        'Q12136',      # disease
         'Q1931388',    # cause of death
-        'Q16521',      # taxon 2.2K
-        'Q5058355',    # cellular component 4
-        'Q7187',       # gene 1
-        'Q11173',      # chemical compound 45
-        'Q811430',     # construction 108
-        'Q618123',     # geographical object 1058
-        'Q1656682',    # event 14K
-        'Q101352',     # family name 2K
-        'Q202444',     # given name 1.7K
-        'Q577',        # year 84K
+        'Q16521',      # taxon
+        'Q5058355',    # cellular component
+        'Q7187',       # gene
+        'Q11173',      # chemical compound
+        'Q811430',     # construction
+        'Q618123',     # geographical object
+        'Q1656682',    # event
+        'Q101352',     # family name
+        'Q202444',     # given name
+        'Q577',        # year
         'Q186081',     # time interval
         'Q11563',      # number
         'Q17376908',   # languoid
-        'Q1047113',    # specialty  (REORDERED) 5.2K
-        'Q968159',     # art movement (NEW TYPE) 772
-        'Q483394',     # genre  (REORDERED) 20K
-        'Q47574',      # unit of measurement (REPLACES unit) 38
-        'Q3695082',    # sign 327
-        'Q2996394',    # biological process 993
-        'Q11410',      # game 523
-        'Q7397',       # software 532
-        'Q838948',     # work of art 126
-        'Q47461344',   # written work 108
+        'Q1047113',    # specialty
+        'Q968159',     # art movement
+        'Q483394',     # genre
+        'Q47574',      # unit of measurement
+        'Q3695082',    # sign
+        'Q2996394',    # biological process
+        'Q11410',      # game
+        'Q7397',       # software
+        'Q838948',     # work of art
+        'Q47461344',   # written work
         'Q28877',      # goods
         'Q15401930',   # product
         'Q121769',     # reference
@@ -117,8 +117,8 @@ class PrelimCategoryParseRanker:
         cover += span.end - span.begin
 
       # Normalize all scores so that they can be compared across parses.
-      prior = math.pow(prior, 1.0 / len(spans))
-      member_score = math.pow(member_score, 1.0 / len(spans))
+      prior = math.pow(prior, 1.0 / len(parse.spans))
+      member_score = math.pow(member_score, 1.0 / len(parse.spans))
       cover /= 1.0 * len(category.document.tokens)
 
       overall_score = 0.0
