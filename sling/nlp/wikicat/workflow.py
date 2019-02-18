@@ -40,6 +40,7 @@ class CategoryParsingWorkflow:
     task.attach_input("kb", kb)
 
 
+  # Returns the output of the candidate parse generation stage (stage 1).
   def generated_parses_resource(self):
     return self.wf.resource(
         "generated-parses.rec", dir=self.outdir, format="records/frame")

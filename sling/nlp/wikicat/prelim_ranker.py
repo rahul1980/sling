@@ -151,7 +151,7 @@ class PrelimCategoryParseRanker:
       elif self.h_name in label:
         label = label[self.h_name]
       if coarse:
-        word = str(label)
+        word = '$' + str(label)
       else:
         pids = '.'.join([pid.name for pid in span.pids])
         word = '$' + pids + '=$' + str(label)

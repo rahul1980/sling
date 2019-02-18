@@ -36,23 +36,36 @@ class FactMatchType(Enum):
 """
 FactMatcher matches a proposed (source_qid, pid, target_qid) fact against
 any existing (source_qid, pid, _) facts.
+
+For example, consider the category "Danish cyclists", with a candidate parse:
+  country_of_citizenship=QID(Denmark) and sport=QID(cycling).
+
+For this parse, we would separately compute and report fact matching
+statistics for each of the two assertions over all members of the category.
 """
 class FactMatcher:
   """
-  Output of match statistics computation.
+  Output of match statistics computation across multiple source_qids.
+  This is comprised of a histogram over various FactMatchType buckets,
+  and corresponding evidences (if enabled).
   """
   class Output:
     def __init__(self, max_evidences=0):
       self.max_evidences = max_evidences
-      self.counts = defaultdict(int)     # match type -> count
+      self.counts = defaultdict(int)      # match type -> count
       self.evidences = defaultdict(list)  # match type -> evidences
 
+    # Adds a match type with corresponding evidence to the output.
     def add(self, match_type, evidence):
       self.counts[match_type] += 1
       if self.max_evidences < 0 or \
         self.max_evidences > len(self.evidences[match_type]):
           self.evidences[match_type].append(evidence)
 
+    # Saves and returns the histogram as a frame. For the ADDITIONAL bucket,
+    # the existing fanout is also saved in the frame. This is because when we
+    # propose an ADDITIONAL fact, we may want to compute its likelihood based on
+    # how many facts already exist.
     def as_frame(self, store):
       buckets = []
       for match_type, count in self.counts.iteritems():
@@ -75,7 +88,7 @@ class FactMatcher:
 
       return frame
 
-
+    # String representation of the histogram.
     def __repr__(self):
       keys = list(sorted(self.counts.keys()))
       kv = [(FactMatchType(k), self.counts[k]) for k in keys]
@@ -89,8 +102,10 @@ class FactMatcher:
     self.date_properties = set()
 
     # Collect unique-valued and date-valued properties.
+    # The former will be used to compute CONFLICT counts, and the latter need to
+    # be processed in a special manner while matching existing facts.
     constraint_role = kb["P2302"]
-    unique = kb["Q19474404"]  # single-value constraint
+    unique = kb["Q19474404"]         # single-value constraint
     w_time = kb["/w/time"]
     for prop in kb["/w/entity"]("role"):
       if prop.target == w_time:
@@ -103,7 +118,7 @@ class FactMatcher:
 
 
   # Returns whether 'prop' is a date-valued property.
-  def _is_date(self, prop):
+  def _date_valued(self, prop):
     return prop in self.date_properties
 
 
@@ -141,12 +156,12 @@ class FactMatcher:
 
 
   # Reports match type for the proposed fact (item, prop, value) against
-  # any existing fact.
+  # any existing fact for the same item and property.
   # 'value' should be a sling.Frame object.
   # 'prop' could be a property (sling.Frame) or a pid-path represented either
   # as a sling.Array or a list.
   #
-  # Returns the type of the match along with the evidence.
+  # Returns the type of the match along with the corresponding evidence.
   def for_item(self, item, prop, value, store=None):
     assert isinstance(value, sling.Frame)
     if isinstance(prop, sling.Frame):
@@ -166,9 +181,9 @@ class FactMatcher:
       return (FactMatchType.EXACT, item)
 
     # For date-valued properties, existing dates could be int or string
-    # (which won't match 'value', which is a frame). For them, we do a
+    # (which won't match 'value', which is a sling.Frame). For them, we do a
     # more elaborate matching procedure.
-    if self._is_date(prop[-1]):
+    if self._date_valued(prop[-1]):
       proposed_date = sling.Date(value)
       existing_dates = [sling.Date(e) for e in exact_facts]
       for e in existing_dates:
@@ -187,7 +202,7 @@ class FactMatcher:
           return (FactMatchType.SUBSUMED_BY_EXISTING, (item, existing))
 
     # Again, dates require special treatment.
-    if self._is_date(prop[-1]):
+    if self._date_valued(prop[-1]):
       for e in existing_dates:
         if self._finer_date(proposed_date, e):
           return (FactMatchType.SUBSUMED_BY_EXISTING, (item, e))
@@ -196,6 +211,7 @@ class FactMatcher:
     if len(prop) == 1 and prop[0] in self.unique_properties:
       return (FactMatchType.CONFLICT, (item, exact_facts[0]))
 
+    # Proposed fact is an additional one. Report the existing fanout.
     return (FactMatchType.ADDITIONAL, (item, len(exact_facts)))
 
 
@@ -215,16 +231,18 @@ class FactMatcher:
   def for_parse(self, items, parse, store=None, max_evidences=0):
     if store is None:
       store = sling.Store(self.kb)
-    output = []   # ith entry = match statistics for ith span
+    retval = []   # ith entry = match statistics for ith span
     for span in parse.spans:
-      match = self.for_items(items, span.pids, span.qid, store, max_evidences)
-      output.append(match)
+      output = self.for_items(items, span.pids, span.qid, store, max_evidences)
+      retval.append(output)
+    return retval
 
 
-  # Same as above, but return one list of match-type histograms per parse
-  # in 'category'. The list of items is taken to be the members of 'category'.
+  # Same as above, but returns one list of match-type histograms per parse
+  # in 'category'. The list of source items is taken to be the members of
+  # 'category'.
   #
-  # 'category' is frame that is produced by the initial stages of the category
+  # 'category' is a frame that is produced by the initial stages of the category
   # parsing pipeline (cf. parse_generator.py and prelim_ranker.py).
   #
   # Most parses share a lot of common spans, so this method caches and reuses
@@ -252,6 +270,7 @@ class FactMatcher:
     return output
 
 
+# Task that adds fact matching statistics to each span in each category parse.
 class FactMatcherTask:
   def init(self, task):
     self.kb = load_kb(task)
@@ -259,6 +278,7 @@ class FactMatcherTask:
     self.matcher = FactMatcher(self.kb, self.extractor)
 
 
+  # Runs the task over a recordio of category parses.
   def run(self, task):
     self.init(task)
     reader = sling.RecordReader(task.input("parses").name)
@@ -267,7 +287,7 @@ class FactMatcherTask:
       store = sling.Store(self.kb)
       category = store.parse(value)
       matches = self.matcher.for_parses(category, store, max_evidences=-1)
-      frame_cache = {}
+      frame_cache = {}   # (pid, qid) -> frame containing their match statistics
       for parse, parse_match in zip(category("parse"), matches):
         for span, span_match in zip(parse.spans, parse_match):
           span_key = (span.pids, span.qid)
@@ -283,15 +303,9 @@ class FactMatcherTask:
 register_task("category-parse-fact-matcher", FactMatcherTask)
 
 
+# Loads a KB and brings up a shell to compute and debug match statistics.
 def shell():
-  # Loads a KB and brings up a shell to compute match statistics.
-  kb = sling.Store()
-  kb.load("local/data/e/wiki/kb.sling")
-  kb.lockgc()
-  kb.freeze()
-  kb.unlockgc()
-  log.info("KB loaded")
-
+  kb = load_kb("local/data/e/wiki/kb.sling")
   extractor = sling.api.FactExtractor(kb)
   matcher = FactMatcher(kb, extractor)
 
@@ -336,29 +350,4 @@ def shell():
     print item, "(" + item.name + ") :", \
       output[0].name, "evidence: ", output[1]
     print ""
-    
-def run():
-  kb = load_kb("local/data/e/wiki/kb.sling")
-  extractor = sling.FactExtractor(kb)
-  matcher = FactMatcher(kb, extractor)
-  reader = sling.RecordReader("local/data/e/wikicat/generated-parses.rec")
-  writer = sling.RecordWriter("local/data/e/wikicat/parses-with-stats.rec")
-  for index, (key, value) in enumerate(reader):
-    store = sling.Store(kb)
-    category = store.parse(value)
-    matches = matcher.for_parses(category, store, max_evidences=-1)
-    frame_cache = {}
-    for parse, parse_match in zip(category("parse"), matches):
-      for span, span_match in zip(parse.spans, parse_match):
-        span_key = (span.pids, span.qid)
-        if span_key not in frame_cache:
-          match_frame = span_match.as_frame(store)
-          frame_cache[span_key] = match_frame
-        span["fact_matches"] = frame_cache[span_key]
-    writer.write(key, category.data(binary=True))
-    if (index + 1) % 100 == 0:
-      print index + 1, "categories processed"
-    if (index + 1) % 900 == 0: break;
-  reader.close()
-  writer.close()
 

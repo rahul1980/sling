@@ -16,6 +16,7 @@
 import sling
 import sling.log as log
 
+# Pool of loaded KBs.
 _kb_cache = {}
 
 def load_kb(task):
