@@ -248,7 +248,7 @@ class FactMatcher:
       store = sling.Store(self.kb)
 
     # Compute existing facts without any backoff.
-    exact_facts = self._facts_without_backoff(store, item, prop)
+    existing = self._facts_without_backoff(store, item, prop)
 
     return self.match_type(store, prop[-1], existing, value)
 
@@ -403,13 +403,15 @@ def test_fact_matcher():
 
   # Adds the given test case and its reverse test case too (if possible).
   def add(pid, existing, proposed, match_type):
-    rev_type = match_type
-    if match_type == FactMatchType.SUBSUMED_BY_EXISTING:
-      rev_type = FactMatchType.SUBSUMES_EXISTING
-    if match_type == FactMatchType.SUBSUMES_EXISTING:
-      rev_type = FactMatchType.SUBSUMED_BY_EXISTING
     tuples.append((pid, existing, proposed, match_type))
+
+    # Add the reverse case.
     if match_type != FactMatchType.NEW and existing != proposed:
+      rev_type = match_type
+      if match_type == FactMatchType.SUBSUMED_BY_EXISTING:
+        rev_type = FactMatchType.SUBSUMES_EXISTING
+      if match_type == FactMatchType.SUBSUMES_EXISTING:
+        rev_type = FactMatchType.SUBSUMED_BY_EXISTING
       tuples.append((pid, proposed, existing, rev_type))
 
   # Place of birth, Kapiolani Medical Center, Honolulu.
