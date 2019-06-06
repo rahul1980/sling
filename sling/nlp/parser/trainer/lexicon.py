@@ -69,7 +69,7 @@ class Lexicon:
     index = 0
     lines = vocabstring.split(delimiter)
     if lines[-1] == '': lines.pop()
-    for line in lines:
+    for line_index, line in enumerate(lines):
       if line == self.oov_item:
         assert index == self.oov_index, index
       self.item_to_index[line] = index

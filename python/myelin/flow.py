@@ -136,7 +136,7 @@ class FileReader:
     """Reads a string."""
     size = self.read_int()
     if size > 0:
-      return self.read(size).tobytes()
+      return self.read(size).tobytes().decode()
     return ''
 
 

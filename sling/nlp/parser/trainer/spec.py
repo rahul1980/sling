@@ -193,9 +193,7 @@ class Spec:
 
   # Reads spec from a flow.
   def from_flow(self, fl):
-    blob = fl.blob(b"spec")
-    import pdb
-    pdb.set_trace()
+    blob = fl.blob("spec")
     temp_dict = pickle.loads(blob.data)
     self.__dict__.update(temp_dict)
 
@@ -205,7 +203,7 @@ class Spec:
     temp_file = tempfile.NamedTemporaryFile(delete=False)
     filename = temp_file.name
     with open(filename, "wb") as f:
-      f.write(fl.blob(b"commons").data)
+      f.write(fl.blob("commons").data)
     temp_file.close()
     self.commons.load(filename)
     _ = sling.DocumentSchema(self.commons)
@@ -225,7 +223,12 @@ class Spec:
     # Read word lexicon.
     blob = fl.blob("lexicon")
     self.words = Lexicon(self.words_normalize_digits)
-    self.words.read(blob.data.tobytes(), chr(int(blob.get_attr("delimiter"))))
+
+    # Delimiter is stored as the string form of the character.
+    # e.g. \n is stored as the string "10".
+    delimiter_str = chr(int(blob.get_attr("delimiter")))
+    vocab_str = blob.data.tobytes().decode()
+    self.words.read(vocab_str, delimiter_str)
     print(self.words.size(), "words read from flow's lexicon")
 
     # Read suffix table.
@@ -236,7 +239,7 @@ class Spec:
       shift_bits = 0
       index = 0
       while index < len(mview):
-        part = ord(mview[index])
+        part = mview[index]
         index += 1
         output |= (part & 127) << shift_bits
         shift_bits += 7
@@ -253,7 +256,7 @@ class Spec:
     num, data = read_int(data)                       # num affixes
     for _ in range(num):
       num_bytes, data = read_int(data)
-      word = data[0:num_bytes].tobytes()
+      word = data[0:num_bytes].tobytes().decode()
       self.suffix.add(word)
       data = data[num_bytes:]
       num_chars, data = read_int(data)
