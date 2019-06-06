@@ -183,7 +183,6 @@ void Parser::Parse(Document *document) const {
     bool done = false;
     int steps_since_shift = 0;
     int step = 0;
-    int marks = 0;
     while (!done) {
       // Allocate space for next step.
       data.ff_step_.push();
@@ -201,14 +200,6 @@ void Parser::Parse(Document *document) const {
       // Apply the cascade.
       ParserAction action;
       data.cascade_.Compute(&data.ff_step_, step, &state, &action, data.trace_);
-      if (action.type == ParserAction::MARK) {
-        marks++;
-        if (marks > 5) {
-          action = state.current() < state.end() ? ParserAction::Shift() : ParserAction::Stop();
-        }
-      } else {
-        marks = 0;
-      }
       state.Apply(action);
 
       // Update state.
