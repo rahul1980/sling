@@ -628,7 +628,7 @@ class Flow:
   def load(self, filename):
     f = FileReader(filename)
     magic = f.read(4)
-    assert magic == 'flow', magic
+    assert magic == memoryview(b'flow'), magic.tobytes()
 
     version = f.read_int()
     assert version == 4 or version == 5, version

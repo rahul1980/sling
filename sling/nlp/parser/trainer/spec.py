@@ -193,7 +193,9 @@ class Spec:
 
   # Reads spec from a flow.
   def from_flow(self, fl):
-    blob = fl.blob("spec")
+    blob = fl.blob(b"spec")
+    import pdb
+    pdb.set_trace()
     temp_dict = pickle.loads(blob.data)
     self.__dict__.update(temp_dict)
 
@@ -203,7 +205,7 @@ class Spec:
     temp_file = tempfile.NamedTemporaryFile(delete=False)
     filename = temp_file.name
     with open(filename, "wb") as f:
-      f.write(fl.blob("commons").data)
+      f.write(fl.blob(b"commons").data)
     temp_file.close()
     self.commons.load(filename)
     _ = sling.DocumentSchema(self.commons)
