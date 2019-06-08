@@ -118,5 +118,3 @@ class Lexicon:
     for i in range(min(n, self.size())):
       s.append(prefix + str(i) + " = " + self.index_to_item[i])
     return "\n".join(s)
-
-

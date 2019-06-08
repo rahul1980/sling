@@ -105,7 +105,8 @@ class Spec:
     self.ff_hidden_dim = 128
 
     # Fixed feature dimensionalities.
-    self.oov_features = True
+    self.affix_features = True
+    self.shape_features = True
     self.words_dim = 32
     self.suffixes_dim = 16
     self.fallback_dim = 8  # dimensionality of each fallback feature
@@ -342,10 +343,11 @@ class Spec:
   def _specify_features(self):
     # LSTM features.
     self.add_lstm_fixed("word", self.words_dim, self.words.size())
-    if self.oov_features:
+    if self.affix_features:
       self.add_lstm_fixed(
           "suffix", self.suffixes_dim, self.suffix.size(), \
           self.suffixes_max_length + 1)  # +1 to account for the empty affix
+    if self.shape_features:
       self.add_lstm_fixed(
           "capitalization", self.fallback_dim, Spec.CAPITALIZATION_CARDINALITY)
       self.add_lstm_fixed("hyphen", self.fallback_dim, Spec.HYPHEN_CARDINALITY)
@@ -567,6 +569,7 @@ class Spec:
         raise ValueError("LSTM feature '", f.name, "' not implemented")
     return output
 
+
   # Returns the index of the bin corresponding to the distance of the topmost
   # marked token from the current token.
   def _mark_distance(self, t1, t2):
@@ -574,7 +577,8 @@ class Spec:
     for i, x in enumerate(self.distance_bins):
       if d <= x: return i
     return len(self.distance_bins)
-  
+
+
   # Returns raw indices of all fixed FF features for 'state'.
   def raw_ff_fixed_features(self, feature_spec, state):
     role_graph = state.role_graph()
@@ -695,4 +699,3 @@ class Spec:
       state.advance(gold)
 
     print("Final state after", len(document.gold), "actions:", state)
-
